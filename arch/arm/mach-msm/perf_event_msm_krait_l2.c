@@ -350,7 +350,7 @@ static irqreturn_t krait_l2_handle_irq(int irq_num, void *dev)
 
 	regs = get_irq_regs();
 
-	perf_sample_data_init(&data, 0);
+	perf_sample_data_init(&data, 0, 0);
 
 	while (pmovsr) {
 		bitp = __ffs(pmovsr);
