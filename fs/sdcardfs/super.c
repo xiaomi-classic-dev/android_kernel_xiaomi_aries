@@ -184,7 +184,7 @@ static void sdcardfs_evict_inode(struct inode *inode)
 
 	truncate_inode_pages(&inode->i_data, 0);
 	set_top(SDCARDFS_I(inode), NULL);
-	end_writeback(inode);
+	clear_inode(inode);
 	/*
 	 * Decrement a reference to a lower_inode, which was incremented
 	 * by our read_inode when it was created initially.

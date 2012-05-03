@@ -689,11 +689,6 @@ static inline bool __cancel_delayed_work_sync(struct sdfat_sb_info *sbi)
 	return 0;
 }
 
-static inline void clear_inode(struct inode *inode)
-{
-	end_writeback(inode);
-}
-
 static int sdfat_revalidate(struct dentry *dentry, unsigned int flags)
 {
 	if (flags & LOOKUP_RCU)
