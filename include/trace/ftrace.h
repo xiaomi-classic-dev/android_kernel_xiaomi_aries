@@ -718,6 +718,9 @@ __attribute__((section("_ftrace_events"))) *__event_##call = &event_##call
 #undef __perf_count
 #define __perf_count(c) __count = (c)
 
+#undef __perf_task
+#define __perf_task(t) __task = (t)
+
 #undef TP_perf_assign
 #define TP_perf_assign(args...) args
 
@@ -731,6 +734,7 @@ perf_trace_##call(void *__data, proto)					\
 	struct ftrace_raw_##call *entry;				\
 	struct pt_regs *__regs;						\
 	u64 __count = 1;					\
+	struct task_struct *__task = NULL;				\
 	struct hlist_head *head;					\
 	int __entry_size;						\
 	int __data_size;						\
@@ -756,7 +760,7 @@ perf_trace_##call(void *__data, proto)					\
 									\
 	perf_trace_run_bpf_submit(entry, __entry_size, rctx,		\
 				  event_call, __count, __regs,		\
-				  head, NULL);			\
+				  head, __task);			\
 }
 
 /*

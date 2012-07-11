@@ -1857,7 +1857,7 @@ static __kprobes void kprobe_perf_func(struct kprobe *kp,
 
 	head = this_cpu_ptr(call->perf_events);
 	perf_trace_buf_submit(entry, size, rctx, call->event.type, 1, regs,
-			      head);
+			      head, NULL);
 }
 
 /* Kretprobe profile handler */
@@ -1889,7 +1889,7 @@ static __kprobes void kretprobe_perf_func(struct kretprobe_instance *ri,
 
 	head = this_cpu_ptr(call->perf_events);
 	perf_trace_buf_submit(entry, size, rctx, call->event.type, 1, regs,
-			      head);
+			      head, NULL);
 }
 #endif	/* CONFIG_PERF_EVENTS */
 
