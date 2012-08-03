@@ -505,9 +505,10 @@ static int work_next_color(int color)
  * contain the pointer to the queued cwq.  Once execution starts, the flag
  * is cleared and the high bits contain OFFQ flags and CPU number.
  *
- * set_work_{cwq|cpu}() and clear_work_data() can be used to set the
- * cwq, cpu or clear work->data.  These functions should only be
- * called while the work is owned - ie. while the PENDING bit is set.
+ * set_work_cwq(), set_work_cpu_and_clear_pending() and clear_work_data()
+ * can be used to set the cwq, cpu or clear work->data.  These functions
+ * should only be called while the work is owned - ie. while the PENDING
+ * bit is set.
  *
  * get_work_[g]cwq() can be used to obtain the gcwq or cwq
  * corresponding to a work.  gcwq is available once the work has been
@@ -529,9 +530,10 @@ static void set_work_cwq(struct work_struct *work,
 		      WORK_STRUCT_PENDING | WORK_STRUCT_CWQ | extra_flags);
 }
 
-static void set_work_cpu(struct work_struct *work, unsigned int cpu)
+static void set_work_cpu_and_clear_pending(struct work_struct *work,
+					   unsigned int cpu)
 {
-	set_work_data(work, (unsigned long)cpu << WORK_OFFQ_CPU_SHIFT, WORK_STRUCT_PENDING);
+	set_work_data(work, (unsigned long)cpu << WORK_OFFQ_CPU_SHIFT, 0);
 }
 
 static void clear_work_data(struct work_struct *work)
@@ -1174,7 +1176,14 @@ static void __queue_work(unsigned int cpu, struct workqueue_struct *wq,
 	struct cpu_workqueue_struct *cwq;
 	struct list_head *worklist;
 	unsigned int work_flags;
-	unsigned long flags;
+
+	/*
+	 * While a work item is PENDING && off queue, a task trying to
+	 * steal the PENDING will busy-loop waiting for it to either get
+	 * queued or lose PENDING.  Grabbing PENDING and queueing should
+	 * happen with IRQ disabled.
+	 */
+	WARN_ON_ONCE(!irqs_disabled());
 
 	debug_work_activate(work);
 
@@ -1201,7 +1210,7 @@ static void __queue_work(unsigned int cpu, struct workqueue_struct *wq,
 		    (last_gcwq = get_work_gcwq(work)) && last_gcwq != gcwq) {
 			struct worker *worker;
 
-			spin_lock_irqsave(&last_gcwq->lock, flags);
+			spin_lock(&last_gcwq->lock);
 
 			worker = find_worker_executing_work(last_gcwq, work);
 
@@ -1209,21 +1218,25 @@ static void __queue_work(unsigned int cpu, struct workqueue_struct *wq,
 				gcwq = last_gcwq;
 			else {
 				/* meh... not running there, queue here */
-				spin_unlock_irqrestore(&last_gcwq->lock, flags);
-				spin_lock_irqsave(&gcwq->lock, flags);
+				spin_unlock(&last_gcwq->lock);
+				spin_lock(&gcwq->lock);
 			}
-		} else
-			spin_lock_irqsave(&gcwq->lock, flags);
+		} else {
+			spin_lock(&gcwq->lock);
+		}
 	} else {
 		gcwq = get_gcwq(WORK_CPU_UNBOUND);
-		spin_lock_irqsave(&gcwq->lock, flags);
+		spin_lock(&gcwq->lock);
 	}
 
 	/* gcwq determined, get cwq and queue */
 	cwq = get_cwq(gcwq->cpu, wq);
 	trace_workqueue_queue_work(cpu, cwq, work);
 
-	BUG_ON(!list_empty(&work->entry));
+	if (WARN_ON(!list_empty(&work->entry))) {
+		spin_unlock(&gcwq->lock);
+		return;
+	}
 
 	cwq->nr_in_flight[cwq->work_color]++;
 	work_flags = work_color_to_flags(cwq->work_color);
@@ -1239,7 +1252,7 @@ static void __queue_work(unsigned int cpu, struct workqueue_struct *wq,
 
 	insert_work(cwq, work, worklist, work_flags);
 
-	spin_unlock_irqrestore(&gcwq->lock, flags);
+	spin_unlock(&gcwq->lock);
 }
 
 /**
@@ -1278,11 +1291,15 @@ int
 queue_work_on(int cpu, struct workqueue_struct *wq, struct work_struct *work)
 {
 	int ret = 0;
+	unsigned long flags;
+
+	local_irq_save(flags);
 
 	if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))) {
 		__queue_work(cpu, wq, work);
 		ret = 1;
 	}
+	local_irq_restore(flags);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(queue_work_on);
@@ -1292,8 +1309,10 @@ static void delayed_work_timer_fn(unsigned long __data)
 	struct delayed_work *dwork = (struct delayed_work *)__data;
 	struct cpu_workqueue_struct *cwq = get_work_cwq(&dwork->work);
 
+	local_irq_disable();
 	if (cwq != NULL)
 		__queue_work(smp_processor_id(), cwq->wq, &dwork->work);
+	local_irq_enable();
 }
 
 /**
@@ -1329,6 +1348,10 @@ int queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
 	int ret = 0;
 	struct timer_list *timer = &dwork->timer;
 	struct work_struct *work = &dwork->work;
+	unsigned long flags;
+
+	/* read the comment in __queue_work() */
+	local_irq_save(flags);
 
 	if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))) {
 		unsigned int lcpu;
@@ -1365,6 +1388,8 @@ int queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
 			add_timer(timer);
 		ret = 1;
 	}
+
+	local_irq_restore(flags);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(queue_delayed_work_on);
@@ -1929,7 +1954,7 @@ __acquires(&gcwq->lock)
 		return;
 	}
 
-	/* claim and process */
+	/* claim and dequeue */
 	debug_work_deactivate(work);
 	hlist_add_head(&worker->hentry, bwh);
 	worker->current_work = work;
@@ -1937,8 +1962,6 @@ __acquires(&gcwq->lock)
 	worker->current_cwq = cwq;
 	work_color = get_work_color(work);
 
-	/* record the current cpu number in the work data and dequeue */
-	set_work_cpu(work, gcwq->cpu);
 	list_del_init(&work->entry);
 
 	/*
@@ -1963,10 +1986,18 @@ __acquires(&gcwq->lock)
 	if (unlikely(cpu_intensive))
 		worker_set_flags(worker, WORKER_CPU_INTENSIVE, true);
 
-	spin_unlock_irq(&gcwq->lock);
+	/*
+	 * Record the last CPU and clear PENDING.  The following wmb is
+	 * paired with the implied mb in test_and_set_bit(PENDING) and
+	 * ensures all updates to @work made here are visible to and
+	 * precede any updates by the next PENDING owner.  Also, clear
+	 * PENDING inside @gcwq->lock so that PENDING and queued state
+	 * changes happen together while IRQ is disabled.
+	 */
+	smp_wmb();
+	set_work_cpu_and_clear_pending(work, gcwq->cpu);
 
-	smp_wmb();	/* paired with test_and_set_bit(PENDING) */
-	work_clear_pending(work);
+	spin_unlock_irq(&gcwq->lock);
 
 	lock_map_acquire_read(&cwq->wq->lockdep_map);
 	lock_map_acquire(&lockdep_map);
@@ -2760,9 +2791,11 @@ EXPORT_SYMBOL_GPL(cancel_work_sync);
  */
 bool flush_delayed_work(struct delayed_work *dwork)
 {
+	local_irq_disable();
 	if (del_timer_sync(&dwork->timer))
 		__queue_work(raw_smp_processor_id(),
 			     get_work_cwq(&dwork->work)->wq, &dwork->work);
+	local_irq_enable();
 	return flush_work(&dwork->work);
 }
 EXPORT_SYMBOL(flush_delayed_work);
@@ -2781,9 +2814,11 @@ EXPORT_SYMBOL(flush_delayed_work);
  */
 bool flush_delayed_work_sync(struct delayed_work *dwork)
 {
+	local_irq_disable();
 	if (del_timer_sync(&dwork->timer))
 		__queue_work(raw_smp_processor_id(),
 			     get_work_cwq(&dwork->work)->wq, &dwork->work);
+	local_irq_enable();
 	return flush_work_sync(&dwork->work);
 }
 EXPORT_SYMBOL(flush_delayed_work_sync);
