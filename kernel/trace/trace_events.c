@@ -1531,6 +1531,8 @@ static __init int event_trace_init(void)
 	if (ret)
 		pr_warning("Failed to register trace events module notifier\n");
 
+	trace_printk_start_comm();
+
 	return 0;
 }
 fs_initcall(event_trace_init);
