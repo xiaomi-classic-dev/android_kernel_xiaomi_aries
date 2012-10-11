@@ -1627,6 +1627,9 @@ void trace_printk_init_buffers(void)
 
 	pr_info("ftrace: Allocated trace_printk buffers\n");
 
+	/* Expand the buffers to set size */
+	tracing_update_buffers();
+
 	buffers_allocated = 1;
 }
 
@@ -3193,6 +3196,10 @@ static int __tracing_resize_ring_buffer(unsigned long size)
 	 * expanding it later.
 	 */
 	ring_buffer_expanded = 1;
+
+	/* May be called before buffers are initialized */
+	if (!global_trace.buffer)
+		return 0;
 
 	ret = ring_buffer_resize(global_trace.buffer, size);
 	if (ret < 0)
