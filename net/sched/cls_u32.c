@@ -489,15 +489,15 @@ static const struct nla_policy u32_policy[TCA_U32_MAX + 1] = {
 	[TCA_U32_MARK]		= { .len = sizeof(struct tc_u32_mark) },
 };
 
-static int u32_set_parms(struct tcf_proto *tp, unsigned long base,
-			 struct tc_u_hnode *ht,
+static int u32_set_parms(struct net *net, struct tcf_proto *tp,
+			 unsigned long base, struct tc_u_hnode *ht,
 			 struct tc_u_knode *n, struct nlattr **tb,
 			 struct nlattr *est)
 {
 	int err;
 	struct tcf_exts e;
 
-	err = tcf_exts_validate(tp, tb, est, &e, &u32_ext_map);
+	err = tcf_exts_validate(net, tp, tb, est, &e, &u32_ext_map);
 	if (err < 0)
 		return err;
 
@@ -545,7 +545,7 @@ errout:
 	return err;
 }
 
-static int u32_change(struct sk_buff *in_skb,
+static int u32_change(struct net *net, struct sk_buff *in_skb,
 		      struct tcf_proto *tp, unsigned long base, u32 handle,
 		      struct nlattr **tca,
 		      unsigned long *arg)
@@ -571,7 +571,8 @@ static int u32_change(struct sk_buff *in_skb,
 		if (TC_U32_KEY(n->handle) == 0)
 			return -EINVAL;
 
-		return u32_set_parms(tp, base, n->ht_up, n, tb, tca[TCA_RATE]);
+		return u32_set_parms(net, tp, base, n->ht_up, n, tb,
+				     tca[TCA_RATE]);
 	}
 
 	if (tb[TCA_U32_DIVISOR]) {
@@ -657,7 +658,7 @@ static int u32_change(struct sk_buff *in_skb,
 	}
 #endif
 
-	err = u32_set_parms(tp, base, ht, n, tb, tca[TCA_RATE]);
+	err = u32_set_parms(net, tp, base, ht, n, tb, tca[TCA_RATE]);
 	if (err == 0) {
 		struct tc_u_knode **ins;
 		for (ins = &ht->ht[TC_U32_HASH(handle)]; *ins; ins = &(*ins)->next)
