@@ -72,4 +72,7 @@
 
 #define SO_REUSEPORT	15
 
+
+#define SO_LOCK_FILTER		44
+
 #endif /* _ASM_SOCKET_H */

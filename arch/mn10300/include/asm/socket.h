@@ -81,4 +81,7 @@
 #define SO_ATTACH_REUSEPORT_CBPF	51
 #define SO_ATTACH_REUSEPORT_EBPF	52
 
+
+#define SO_LOCK_FILTER		44
+
 #endif /* _ASM_SOCKET_H */
