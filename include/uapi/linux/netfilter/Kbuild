@@ -1,2 +1,3 @@
 # UAPI Header export list
 header-y += ipset/
+header-y += xt_bpf.h
