@@ -75,4 +75,6 @@
 
 #define SO_COOKIE		57
 
+#define SO_REUSEPORT	15
+
 #endif /* _ASM_SOCKET_H */

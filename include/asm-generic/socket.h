@@ -80,4 +80,7 @@
 
 #define SO_COOKIE		57
 
+
+#define SO_REUSEPORT	15
+
 #endif /* __ASM_GENERIC_SOCKET_H */

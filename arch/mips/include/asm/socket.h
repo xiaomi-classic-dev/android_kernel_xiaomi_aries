@@ -133,4 +133,7 @@ enum sock_type {
 #define SO_ATTACH_BPF		50
 #define SO_DETACH_BPF		SO_DETACH_FILTER
 
+
+#define SO_REUSEPORT 0x0200	/* Allow local address and port reuse.  */
+
 #endif /* _ASM_SOCKET_H */
