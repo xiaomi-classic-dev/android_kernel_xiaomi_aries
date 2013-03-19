@@ -1402,7 +1402,7 @@ static int cpuset_can_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
 		 * set_cpus_allowed_ptr() on all attached tasks before
 		 * cpus_allowed may be changed.
 		 */
-		if (task->flags & PF_THREAD_BOUND)
+		if (task->flags & PF_NO_SETAFFINITY)
 			return -EINVAL;
 		if ((ret = security_task_setscheduler(task)))
 			return ret;

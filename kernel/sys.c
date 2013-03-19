@@ -356,7 +356,6 @@ EXPORT_SYMBOL(unregister_reboot_notifier);
 
 /* Add backwards compatibility for stable trees. */
 #ifndef PF_NO_SETAFFINITY
-#define PF_NO_SETAFFINITY		PF_THREAD_BOUND
 #endif
 
 static void migrate_to_reboot_cpu(void)
