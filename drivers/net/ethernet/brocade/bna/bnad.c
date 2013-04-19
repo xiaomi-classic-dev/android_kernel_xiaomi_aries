@@ -529,7 +529,7 @@ bnad_poll_cq(struct bnad *bnad, struct bna_ccb *ccb, int budget)
 		skb->protocol = eth_type_trans(skb, bnad->netdev);
 
 		if (flags & BNA_CQ_EF_VLAN)
-			__vlan_hwaccel_put_tag(skb, ntohs(cmpl->vlan_tag));
+			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), ntohs(cmpl->vlan_tag));
 
 		if (skb->ip_summed == CHECKSUM_UNNECESSARY)
 			napi_gro_receive(&rx_ctrl->napi, skb);

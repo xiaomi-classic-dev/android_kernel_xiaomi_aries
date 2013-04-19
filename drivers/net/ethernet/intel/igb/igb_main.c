@@ -6059,7 +6059,7 @@ static void igb_rx_vlan(struct igb_ring *ring,
 		else
 			vid = le16_to_cpu(rx_desc->wb.upper.vlan);
 
-		__vlan_hwaccel_put_tag(skb, vid);
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vid);
 	}
 }
 

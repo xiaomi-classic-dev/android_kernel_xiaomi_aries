@@ -1570,7 +1570,7 @@ qlcnic_process_rcv(struct qlcnic_adapter *adapter,
 	skb->protocol = eth_type_trans(skb, netdev);
 
 	if (vid != 0xffff)
-		__vlan_hwaccel_put_tag(skb, vid);
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vid);
 
 	napi_gro_receive(&sds_ring->napi, skb);
 
@@ -1655,7 +1655,7 @@ qlcnic_process_lro(struct qlcnic_adapter *adapter,
 	length = skb->len;
 
 	if (vid != 0xffff)
-		__vlan_hwaccel_put_tag(skb, vid);
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vid);
 	netif_receive_skb(skb);
 
 	adapter->stats.lro_pkts++;

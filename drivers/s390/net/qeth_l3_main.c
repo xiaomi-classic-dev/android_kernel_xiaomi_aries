@@ -2033,7 +2033,7 @@ static int qeth_l3_process_inbound_buffer(struct qeth_card *card,
 						      &vlan_tag);
 				len = skb->len;
 				if (is_vlan && !card->options.sniffer)
-					__vlan_hwaccel_put_tag(skb, vlan_tag);
+					__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan_tag);
 				napi_gro_receive(&card->napi, skb);
 			}
 			break;
