@@ -31,6 +31,7 @@ struct unix_skb_parms {
 	struct pid		*pid;		/* Skb credentials	*/
 	const struct cred	*cred;
 	struct scm_fp_list	*fp;		/* Passed files		*/
+	u32			consumed;	/* Stream bytes read	*/
 #ifdef CONFIG_SECURITY_NETWORK
 	u32			secid;		/* Security ID		*/
 #endif

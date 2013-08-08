@@ -1555,6 +1555,7 @@ static int unix_scm_to_skb(struct scm_cookie *scm, struct sk_buff *skb, bool sen
 	if (scm->cred)
 		UNIXCB(skb).cred = get_cred(scm->cred);
 	UNIXCB(skb).fp = NULL;
+	UNIXCB(skb).consumed = 0;
 	if (scm->fp && send_fds)
 		err = unix_attach_fds(scm, skb);
 
@@ -2079,6 +2080,11 @@ static long unix_stream_data_wait(struct sock *sk, long timeo)
 
 
 
+static unsigned int unix_skb_len(const struct sk_buff *skb)
+{
+	return skb->len - UNIXCB(skb).consumed;
+}
+
 struct unix_stream_read_state {
 	int (*recv_actor)(struct sk_buff *, int, int,
 			  struct unix_stream_read_state *);
@@ -2176,8 +2182,8 @@ unlock:
 			break;
 		}
 
-		if (skip >= skb->len) {
-			skip -= skb->len;
+		if (skip >= unix_skb_len(skb)) {
+			skip -= unix_skb_len(skb);
 			skb = skb_peek_next(skb, &sk->sk_receive_queue);
 			goto again;
 		}
@@ -2199,7 +2205,7 @@ unlock:
 			sunaddr = NULL;
 		}
 
-		chunk = min_t(unsigned int, skb->len - skip, size);
+		chunk = min_t(unsigned int, unix_skb_len(skb) - skip, size);
 		chunk = state->recv_actor(skb, skip, chunk, state);
 		if (chunk < 0) {
 			err = chunk;
@@ -2209,13 +2215,13 @@ unlock:
 		size -= chunk;
 
 		if (!(flags & MSG_PEEK)) {
-			skb_pull(skb, chunk);
+			UNIXCB(skb).consumed += chunk;
 			sk_peek_offset_bwd(sk, chunk);
 
 			if (UNIXCB(skb).fp)
 				unix_detach_fds(scm, skb);
 
-			if (skb->len)
+			if (unix_skb_len(skb))
 				break;
 
 			skb_unlink(skb, &sk->sk_receive_queue);
@@ -2245,7 +2251,8 @@ static int unix_stream_read_actor(struct sk_buff *skb, int skip, int chunk,
 {
 	int ret;
 
-	ret = memcpy_toiovec(state->msg->msg_iov, skb->data + skip, chunk);
+	ret = skb_copy_datagram_iovec(skb, UNIXCB(skb).consumed + skip,
+				      state->msg->msg_iov, chunk);
 	return ret ? ret : chunk;
 }
 
@@ -2288,7 +2295,8 @@ static ssize_t skb_unix_socket_splice(struct sock *sk,
 static int unix_stream_splice_actor(struct sk_buff *skb, int skip, int chunk,
 				    struct unix_stream_read_state *state)
 {
-	return skb_splice_bits(skb, state->socket->sk, skip, state->pipe,
+	return skb_splice_bits(skb, state->socket->sk,
+			       UNIXCB(skb).consumed + skip, state->pipe,
 			       chunk, state->splice_flags,
 			       skb_unix_socket_splice);
 }
@@ -2369,7 +2377,7 @@ long unix_inq_len(struct sock *sk)
 	if (sk->sk_type == SOCK_STREAM ||
 	    sk->sk_type == SOCK_SEQPACKET) {
 		skb_queue_walk(&sk->sk_receive_queue, skb)
-			amount += skb->len;
+			amount += unix_skb_len(skb);
 	} else {
 		skb = skb_peek(&sk->sk_receive_queue);
 		if (skb)
