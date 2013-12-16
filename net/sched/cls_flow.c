@@ -56,11 +56,6 @@ struct flow_filter {
 	u32			hashrnd;
 };
 
-static const struct tcf_ext_map flow_ext_map = {
-	.action	= TCA_FLOW_ACT,
-	.police	= TCA_FLOW_POLICE,
-};
-
 static inline u32 addr_fold(void *addr)
 {
 	unsigned long a = (unsigned long)addr;
@@ -389,7 +384,8 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 			return -EOPNOTSUPP;
 	}
 
-	err = tcf_exts_validate(net, tp, tb, tca[TCA_RATE], &e, &flow_ext_map);
+	tcf_exts_init(&e, TCA_FLOW_ACT, TCA_FLOW_POLICE);
+	err = tcf_exts_validate(net, tp, tb, tca[TCA_RATE], &e);
 	if (err < 0)
 		return err;
 
@@ -447,7 +443,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 
 		f->handle = handle;
 		f->mask	  = ~0U;
-		tcf_exts_init(&f->exts);
+		tcf_exts_init(&f->exts, TCA_FLOW_ACT, TCA_FLOW_POLICE);
 
 		get_random_bytes(&f->hashrnd, 4);
 		f->perturb_timer.function = flow_perturbation;
@@ -594,7 +590,7 @@ static int flow_dump(struct tcf_proto *tp, unsigned long fh,
 	if (f->perturb_period)
 		NLA_PUT_U32(skb, TCA_FLOW_PERTURB, f->perturb_period / HZ);
 
-	if (tcf_exts_dump(skb, &f->exts, &flow_ext_map) < 0)
+	if (tcf_exts_dump(skb, &f->exts) < 0)
 		goto nla_put_failure;
 #ifdef CONFIG_NET_EMATCH
 	if (f->ematches.hdr.nmatches &&
@@ -603,7 +599,7 @@ static int flow_dump(struct tcf_proto *tp, unsigned long fh,
 #endif
 	nla_nest_end(skb, nest);
 
-	if (tcf_exts_dump_stats(skb, &f->exts, &flow_ext_map) < 0)
+	if (tcf_exts_dump_stats(skb, &f->exts) < 0)
 		goto nla_put_failure;
 
 	return skb->len;
