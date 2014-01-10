@@ -26,7 +26,6 @@
 #define L2T_P(p, L) qdisc_l2t((p)->tcfp_P_tab, L)
 
 #define POL_TAB_MASK     15
-static u32 police_idx_gen;
 static struct tcf_hashinfo police_hash_info;
 
 /* old policer structure from before tc actions */
@@ -228,7 +227,7 @@ override:
 
 	police->tcfp_t_c = psched_get_time();
 	police->tcf_index = parm->index ? parm->index :
-		tcf_hash_new_index(&police_idx_gen, &police_hash_info);
+		tcf_hash_new_index(&police_hash_info);
 	h = tcf_hash(police->tcf_index, POL_TAB_MASK);
 	spin_lock_bh(&police_hash_info.lock);
 	hlist_add_head(&police->tcf_head, &police_hash_info.htab[h]);
