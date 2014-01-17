@@ -154,7 +154,7 @@ int tcf_generic_walker(struct sk_buff *skb, struct netlink_callback *cb,
 }
 EXPORT_SYMBOL(tcf_generic_walker);
 
-struct tcf_common *tcf_hash_lookup(u32 index, struct tcf_hashinfo *hinfo)
+static struct tcf_common *tcf_hash_lookup(u32 index, struct tcf_hashinfo *hinfo)
 {
 	struct tcf_common *p = NULL;
 	struct hlist_head *head;
@@ -168,7 +168,6 @@ struct tcf_common *tcf_hash_lookup(u32 index, struct tcf_hashinfo *hinfo)
 
 	return p;
 }
-EXPORT_SYMBOL(tcf_hash_lookup);
 
 u32 tcf_hash_new_index(struct tcf_hashinfo *hinfo)
 {
