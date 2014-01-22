@@ -1171,11 +1171,7 @@ static void packet_sock_destruct(struct sock *sk)
 
 static struct sock *fanout_demux_hash(struct packet_fanout *f, struct sk_buff *skb, unsigned int num)
 {
-	u32 idx, hash = skb->rxhash;
-
-	idx = ((u64)hash * num) >> 32;
-
-	return f->arr[idx];
+	return f->arr[reciprocal_scale(skb->rxhash, num)];
 }
 
 static struct sock *fanout_demux_lb(struct packet_fanout *f, struct sk_buff *skb, unsigned int num)
