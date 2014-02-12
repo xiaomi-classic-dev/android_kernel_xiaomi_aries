@@ -56,6 +56,8 @@ int tcf_hash_release(struct tc_action *a, int bind)
 
 		p->tcfc_refcnt--;
 		if (p->tcfc_bindcnt <= 0 && p->tcfc_refcnt <= 0) {
+			if (a->ops->cleanup)
+				a->ops->cleanup(a, bind);
 			tcf_hash_destroy(a);
 			ret = 1;
 		}
@@ -275,6 +277,16 @@ int tcf_register_action(struct tc_action_ops *act)
 {
 	struct tc_action_ops *a;
 
+	/* Must supply act, dump and init */
+	if (!act->act || !act->dump || !act->init)
+		return -EINVAL;
+
+	/* Supply defaults */
+	if (!act->lookup)
+		act->lookup = tcf_hash_search;
+	if (!act->walk)
+		act->walk = tcf_generic_walker;
+
 	write_lock(&act_mod_lock);
 	list_for_each_entry(a, &act_base, head) {
 		if (act->type == a->type || (strcmp(act->kind, a->kind) == 0)) {
@@ -407,17 +419,10 @@ void tcf_action_destroy(struct list_head *actions, int bind)
 	struct tc_action *a, *tmp;
 
 	list_for_each_entry_safe(a, tmp, actions, list) {
-		if (a->ops && a->ops->cleanup) {
-			if (a->ops->cleanup(a, bind) == ACT_P_DELETED)
-				module_put(a->ops->owner);
-			list_del(&a->list);
-			kfree(a);
-		} else {
-			/*FIXME: Remove later - catch insertion bugs*/
-			WARN(1, "tcf_action_destroy: BUG? destroying NULL ops\n");
-			list_del(&a->list);
-			kfree(a);
-		}
+		if (tcf_hash_release(a, bind) == ACT_P_DELETED)
+			module_put(a->ops->owner);
+		list_del(&a->list);
+		kfree(a);
 	}
 }
 
