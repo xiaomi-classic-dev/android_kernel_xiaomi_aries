@@ -57,12 +57,16 @@ struct seccomp_filter {
 	atomic_t usage;
 	struct seccomp_filter *prev;
 	unsigned short len;  /* Instruction count */
-	struct sock_filter insns[];
+	struct sock_filter_int insnsi[];
 };
 
 /* Limit any path through the tree to 256KB worth of instructions. */
 #define MAX_INSNS_PER_PATH ((1 << 18) / sizeof(struct sock_filter))
 
+/*
+ * Endianness is explicitly ignored and left for BPF program authors to manage
+ * as per the specific architecture.
+ */
 /**
  * get_u32 - returns a u32 offset into data
  * @data: a unsigned 64 bit value
@@ -113,15 +117,30 @@ u32 seccomp_bpf_load(int off)
 	BUG();
 }
 
+static void populate_seccomp_data(struct seccomp_data *sd)
+{
+	struct task_struct *task = current;
+	struct pt_regs *regs = task_pt_regs(task);
+	unsigned long arg;
+	int i;
+
+	memset(sd, 0, sizeof(*sd));
+	sd->nr = syscall_get_nr(task, regs);
+	sd->arch = syscall_get_arch(task, regs);
+	for (i = 0; i < ARRAY_SIZE(sd->args); i++) {
+		syscall_get_arguments(task, regs, i, 1, &arg);
+		sd->args[i] = arg;
+	}
+	sd->instruction_pointer = KSTK_EIP(task);
+}
+
 /**
  *	seccomp_check_filter - verify seccomp filter code
  *	@filter: filter to verify
  *	@flen: length of filter
  *
- * Takes a previously checked filter (by sk_chk_filter) and
- * redirects all filter code that loads struct sk_buff data
- * and related data through seccomp_bpf_load.  It also
- * enforces length and alignment checking of those loads.
+ * Takes a previously checked filter (by sk_chk_filter), rewrites seccomp
+ * data loads, and enforces length and alignment checks for those loads.
  *
  * Returns 0 if the rule set is legal or -EINVAL if not.
  */
@@ -135,17 +154,17 @@ static int seccomp_check_filter(struct sock_filter *filter, unsigned int flen)
 
 		switch (code) {
 		case BPF_S_LD_W_ABS:
-			ftest->code = BPF_S_ANC_SECCOMP_LD_W;
+			ftest->code = BPF_LDX | BPF_W | BPF_ABS;
 			/* 32-bit aligned and not out of bounds. */
 			if (k >= sizeof(struct seccomp_data) || k & 3)
 				return -EINVAL;
 			continue;
 		case BPF_S_LD_W_LEN:
-			ftest->code = BPF_S_LD_IMM;
+			ftest->code = BPF_LD | BPF_IMM;
 			ftest->k = sizeof(struct seccomp_data);
 			continue;
 		case BPF_S_LDX_W_LEN:
-			ftest->code = BPF_S_LDX_IMM;
+			ftest->code = BPF_LDX | BPF_IMM;
 			ftest->k = sizeof(struct seccomp_data);
 			continue;
 		/* Explicitly include allowed calls. */
@@ -185,6 +204,7 @@ static int seccomp_check_filter(struct sock_filter *filter, unsigned int flen)
 		case BPF_S_JMP_JGT_X:
 		case BPF_S_JMP_JSET_K:
 		case BPF_S_JMP_JSET_X:
+			sk_decode_filter(ftest, ftest);
 			continue;
 		default:
 			return -EINVAL;
@@ -202,11 +222,14 @@ static int seccomp_check_filter(struct sock_filter *filter, unsigned int flen)
 static u32 seccomp_run_filters(int syscall)
 {
 	struct seccomp_filter *f = ACCESS_ONCE(current->seccomp.filter);
+	struct seccomp_data sd;
 	u32 ret = SECCOMP_RET_ALLOW;
 
 	/* Ensure unexpected behavior doesn't result in failing open. */
 	if (unlikely(WARN_ON(f == NULL)))
 		return SECCOMP_RET_KILL;
+
+	populate_seccomp_data(&sd);
 
 	/* Make sure cross-thread synced filter points somewhere sane. */
 	smp_read_barrier_depends();
@@ -216,7 +239,7 @@ static u32 seccomp_run_filters(int syscall)
 	 * value always takes priority (ignoring the DATA).
 	 */
 	for (; f; f = f->prev) {
-		u32 cur_ret = sk_run_filter(NULL, f->insns);
+		u32 cur_ret = sk_run_filter_int_seccomp(&sd, f->insnsi);
 
 		if ((cur_ret & SECCOMP_RET_ACTION) < (ret & SECCOMP_RET_ACTION))
 			ret = cur_ret;
@@ -369,6 +392,8 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 	struct seccomp_filter *filter;
 	unsigned long fp_size = fprog->len * sizeof(struct sock_filter);
 	unsigned long total_insns = fprog->len;
+	struct sock_filter *fp;
+	int new_len;
 	long ret;
 
 	if (fprog->len == 0 || fprog->len > BPF_MAXINSNS)
@@ -391,32 +416,52 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 				     CAP_SYS_ADMIN) != 0)
 		return ERR_PTR(-EACCES);
 
-	/* Allocate a new seccomp_filter */
-	filter = kzalloc(sizeof(struct seccomp_filter) + fp_size,
-			 GFP_KERNEL|__GFP_NOWARN);
-	if (!filter)
+	fp = kzalloc(fp_size, GFP_KERNEL | __GFP_NOWARN);
+	if (!fp)
 		return ERR_PTR(-ENOMEM);
-	atomic_set(&filter->usage, 1);
-	filter->len = fprog->len;
 
 	/* Copy the instructions from fprog. */
 	ret = -EFAULT;
-	if (copy_from_user(filter->insns, fprog->filter, fp_size))
-		goto fail;
+	if (copy_from_user(fp, fprog->filter, fp_size))
+		goto free_prog;
 
 	/* Check and rewrite the fprog via the skb checker */
-	ret = sk_chk_filter(filter->insns, filter->len);
+	ret = sk_chk_filter(fp, fprog->len);
 	if (ret)
-		goto fail;
+		goto free_prog;
 
 	/* Check and rewrite the fprog for seccomp use */
-	ret = seccomp_check_filter(filter->insns, filter->len);
+	ret = seccomp_check_filter(fp, fprog->len);
 	if (ret)
-		goto fail;
+		goto free_prog;
 
+	/* Convert classic BPF to the kernel's internal instruction format. */
+	ret = sk_convert_filter(fp, fprog->len, NULL, &new_len);
+	if (ret)
+		goto free_prog;
+
+	filter = kzalloc(sizeof(struct seccomp_filter) +
+			 sizeof(struct sock_filter_int) * new_len,
+			 GFP_KERNEL | __GFP_NOWARN);
+	if (!filter) {
+		ret = -ENOMEM;
+		goto free_prog;
+	}
+
+	ret = sk_convert_filter(fp, fprog->len, filter->insnsi, &new_len);
+	if (ret)
+		goto free_filter;
+
+	atomic_set(&filter->usage, 1);
+	filter->len = new_len;
+
+	kfree(fp);
 	return filter;
-fail:
+
+free_filter:
 	kfree(filter);
+free_prog:
+	kfree(fp);
 	return ERR_PTR(ret);
 }
 
