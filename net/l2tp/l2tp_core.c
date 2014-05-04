@@ -987,7 +987,7 @@ static int l2tp_xmit_core(struct l2tp_session *session, struct sk_buff *skb,
 	}
 
 	/* Queue the packet to IP for output */
-	skb->local_df = 1;
+	skb->ignore_df = 1;
 	error = ip_queue_xmit(skb, fl);
 
 	/* Update stats */
