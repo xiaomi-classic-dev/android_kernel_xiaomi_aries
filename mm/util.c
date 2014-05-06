@@ -5,6 +5,8 @@
 #include <linux/export.h>
 #include <linux/err.h>
 #include <linux/sched.h>
+#include <linux/vmalloc.h>
+#include <linux/workqueue.h>
 #include <asm/uaccess.h>
 
 #include "internal.h"
@@ -32,6 +34,24 @@ char *kstrdup(const char *s, gfp_t gfp)
 	return buf;
 }
 EXPORT_SYMBOL(kstrdup);
+
+static void do_vfree(struct work_struct *work)
+{
+	vfree(work);
+}
+
+void kvfree(const void *addr)
+{
+	if (is_vmalloc_addr(addr)) {
+		struct work_struct *work = (struct work_struct *)addr;
+
+		INIT_WORK(work, do_vfree);
+		schedule_work(work);
+	} else {
+		kfree(addr);
+	}
+}
+EXPORT_SYMBOL(kvfree);
 
 /**
  * kstrndup - allocate space for and copy an existing string
@@ -374,11 +394,3 @@ EXPORT_TRACEPOINT_SYMBOL(kmem_cache_alloc_node);
 EXPORT_TRACEPOINT_SYMBOL(kfree);
 EXPORT_TRACEPOINT_SYMBOL(kmem_cache_free);
 
-void kvfree(const void *addr)
-{
- if (is_vmalloc_addr(addr))
-  vfree(addr);
- else
-  kfree(addr);
-}
-EXPORT_SYMBOL(kvfree);
