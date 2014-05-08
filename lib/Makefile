@@ -25,6 +25,7 @@ obj-y += bcd.o div64.o sort.o parser.o halfmd4.o debug_locks.o random32.o \
 	 bsearch.o find_last_bit.o find_next_bit.o llist.o
 obj-y += kstrtox.o once.o percpu-refcount.o percpu-rwsem.o
 obj-$(CONFIG_TEST_KSTRTOX) += test-kstrtox.o
+obj-$(CONFIG_TEST_BPF) += test_bpf.o
 
 ifeq ($(CONFIG_DEBUG_KOBJECT),y)
 CFLAGS_kobject.o += -DDEBUG
