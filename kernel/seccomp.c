@@ -40,8 +40,7 @@
  *         outside of a lifetime-guarded section.  In general, this
  *         is only needed for handling filters shared across tasks.
  * @prev: points to a previously installed, or inherited, filter
- * @len: the number of instructions in the program
- * @insns: the BPF program instructions to evaluate
+ * @prog: the BPF program to evaluate
  *
  * seccomp_filter objects are organized in a tree linked via the @prev
  * pointer.  For any task, it appears to be a singly-linked list starting
@@ -56,8 +55,7 @@
 struct seccomp_filter {
 	atomic_t usage;
 	struct seccomp_filter *prev;
-	unsigned short len;  /* Instruction count */
-	struct sock_filter_int insnsi[];
+	struct sk_filter *prog;
 };
 
 /* Limit any path through the tree to 256KB worth of instructions. */
@@ -239,7 +237,7 @@ static u32 seccomp_run_filters(int syscall)
 	 * value always takes priority (ignoring the DATA).
 	 */
 	for (; f; f = f->prev) {
-		u32 cur_ret = sk_run_filter_int_seccomp(&sd, f->insnsi);
+		u32 cur_ret = SK_RUN_FILTER(f->prog, (void *)&sd);
 
 		if ((cur_ret & SECCOMP_RET_ACTION) < (ret & SECCOMP_RET_ACTION))
 			ret = cur_ret;
@@ -401,7 +399,7 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 	BUG_ON(INT_MAX / fprog->len < sizeof(struct sock_filter));
 
 	for (filter = current->seccomp.filter; filter; filter = filter->prev)
-		total_insns += filter->len + 4;  /* include a 4 instr penalty */
+		total_insns += filter->prog->len + 4;  /* include a 4 instr penalty */
 	if (total_insns > MAX_INSNS_PER_PATH)
 		return ERR_PTR(-ENOMEM);
 
@@ -440,24 +438,34 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 	if (ret)
 		goto free_prog;
 
-	filter = kzalloc(sizeof(struct seccomp_filter) +
-			 sizeof(struct sock_filter_int) * new_len,
-			 GFP_KERNEL | __GFP_NOWARN);
+	filter = kzalloc(sizeof(*filter), GFP_KERNEL | __GFP_NOWARN);
 	if (!filter) {
 		ret = -ENOMEM;
 		goto free_prog;
 	}
 
-	ret = sk_convert_filter(fp, fprog->len, filter->insnsi, &new_len);
-	if (ret)
+	filter->prog = kzalloc(sk_filter_size(new_len),
+			       GFP_KERNEL | __GFP_NOWARN);
+	if (!filter->prog) {
+		ret = -ENOMEM;
 		goto free_filter;
+	}
+
+	ret = sk_convert_filter(fp, fprog->len, filter->prog->insnsi,
+				&new_len);
+	if (ret)
+		goto free_filter_prog;
 
 	atomic_set(&filter->usage, 1);
-	filter->len = new_len;
+	filter->prog->len = new_len;
+
+	sk_filter_select_runtime(filter->prog);
 
 	kfree(fp);
 	return filter;
 
+free_filter_prog:
+	kfree(filter->prog);
 free_filter:
 	kfree(filter);
 free_prog:
@@ -511,9 +519,9 @@ static long seccomp_attach_filter(unsigned int flags,
 	assert_spin_locked(&current->sighand->siglock);
 
 	/* Validate resulting filter length. */
-	total_insns = filter->len;
+	total_insns = filter->prog->len;
 	for (walker = current->seccomp.filter; walker; walker = walker->prev)
-		total_insns += walker->len + 4;  /* 4 instr penalty */
+		total_insns += walker->prog->len + 4;  /* 4 instr penalty */
 	if (total_insns > MAX_INSNS_PER_PATH)
 		return -ENOMEM;
 
@@ -553,6 +561,7 @@ void get_seccomp_filter(struct task_struct *tsk)
 static inline void seccomp_filter_free(struct seccomp_filter *filter)
 {
 	if (filter) {
+		sk_filter_free(filter->prog);
 		kfree(filter);
 	}
 }
