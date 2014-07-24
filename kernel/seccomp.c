@@ -434,7 +434,7 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 	if (ret)
 		goto free_prog;
 
-	/* Convert classic BPF to the kernel's internal instruction format. */
+	/* Convert classic BPF to the kernel's internal bpf_insn format. */
 	ret = sk_convert_filter(fp, fprog->len, NULL, &new_len);
 	if (ret)
 		goto free_prog;
