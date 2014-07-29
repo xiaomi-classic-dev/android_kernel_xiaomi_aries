@@ -22,6 +22,7 @@
 #include <linux/io.h>
 #include <linux/err.h>
 #include <linux/types.h>
+#include <linux/delay.h>
 #include <mach/msm_iomap.h>
 #include <mach/socinfo.h>
 
@@ -47,6 +48,7 @@ struct msm_rng_device {
 	struct platform_device *pdev;
 	void __iomem *base;
 	struct clk *prng_clk;
+	struct mutex rng_lock;
 };
 
 static int msm_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
@@ -59,6 +61,7 @@ static int msm_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 	u32 val;
 	u32 *retdata = data;
 	int ret;
+	int failed = 0;
 
 	msm_rng_dev = (struct msm_rng_device *)rng->priv;
 	pdev = msm_rng_dev->pdev;
@@ -71,18 +74,27 @@ static int msm_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 	if (maxsize < 4)
 		return 0;
 
+	mutex_lock(&msm_rng_dev->rng_lock);
+
 	/* enable PRNG clock */
 	ret = clk_prepare_enable(msm_rng_dev->prng_clk);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to enable clock in callback\n");
-		return 0;
+		goto err;
 	}
 
 	/* read random data from h/w */
 	do {
 		/* check status bit if data is available */
-		if (!(readl_relaxed(base + PRNG_STATUS_OFFSET) & 0x00000001))
-			break;	/* no data to read so just bail */
+		while (!(readl_relaxed(base + PRNG_STATUS_OFFSET) & 0x00000001)) {
+			if (failed == 10) {
+				pr_err("msm_rng: data not available after retry\n");
+				break;
+			}
+			pr_err("msm_rng: data not available\n");
+			msleep_interruptible(10);
+			failed++;
+		}
 
 		/* read FIFO */
 		val = readl_relaxed(base + PRNG_DATA_OUT_OFFSET);
@@ -100,6 +112,9 @@ static int msm_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 
 	/* vote to turn off clock */
 	clk_disable_unprepare(msm_rng_dev->prng_clk);
+
+err:
+	mutex_unlock(&msm_rng_dev->rng_lock);
 
 	return currsize;
 }
@@ -165,7 +180,7 @@ static int __devinit msm_rng_probe(struct platform_device *pdev)
 		goto err_exit;
 	}
 
-	msm_rng_dev = kzalloc(sizeof(msm_rng_dev), GFP_KERNEL);
+	msm_rng_dev = kzalloc(sizeof(*msm_rng_dev), GFP_KERNEL);
 	if (!msm_rng_dev) {
 		dev_err(&pdev->dev, "cannot allocate memory\n");
 		error = -ENOMEM;
@@ -197,6 +212,8 @@ static int __devinit msm_rng_probe(struct platform_device *pdev)
 
 	if (error)
 		goto rollback_clk;
+
+	mutex_init(&msm_rng_dev->rng_lock);
 
 	/* register with hwrng framework */
 	msm_rng.priv = (unsigned long) msm_rng_dev;
