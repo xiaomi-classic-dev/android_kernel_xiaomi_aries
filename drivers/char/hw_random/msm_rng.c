@@ -56,8 +56,8 @@ static int msm_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 	void __iomem *base;
 	size_t maxsize;
 	size_t currsize = 0;
-	unsigned long val;
-	unsigned long *retdata = data;
+	u32 val;
+	u32 *retdata = data;
 	int ret;
 
 	msm_rng_dev = (struct msm_rng_device *)rng->priv;
