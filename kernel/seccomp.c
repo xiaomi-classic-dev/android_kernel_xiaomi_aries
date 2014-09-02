@@ -445,8 +445,7 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 		goto free_prog;
 	}
 
-	filter->prog = kzalloc(bpf_prog_size(new_len),
-			       GFP_KERNEL | __GFP_NOWARN);
+	filter->prog = bpf_prog_alloc(bpf_prog_size(new_len), __GFP_NOWARN);
 	if (!filter->prog) {
 		ret = -ENOMEM;
 		goto free_filter;
@@ -466,7 +465,7 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 	return filter;
 
 free_filter_prog:
-	kfree(filter->prog);
+	__bpf_prog_free(filter->prog);
 free_filter:
 	kfree(filter);
 free_prog:
