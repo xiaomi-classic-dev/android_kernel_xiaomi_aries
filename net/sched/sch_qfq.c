@@ -142,7 +142,7 @@ struct qfq_group {
 };
 
 struct qfq_sched {
-	struct tcf_proto *filter_list;
+	struct tcf_proto __rcu *filter_list;
 	struct Qdisc_class_hash clhash;
 
 	u64		V;		/* Precise virtual time. */
@@ -361,7 +361,8 @@ static void qfq_put_class(struct Qdisc *sch, unsigned long arg)
 		qfq_destroy_class(sch, cl);
 }
 
-static struct tcf_proto **qfq_tcf_chain(struct Qdisc *sch, unsigned long cl)
+static struct tcf_proto __rcu **qfq_tcf_chain(struct Qdisc *sch,
+					      unsigned long cl)
 {
 	struct qfq_sched *q = qdisc_priv(sch);
 
@@ -489,6 +490,7 @@ static struct qfq_class *qfq_classify(struct sk_buff *skb, struct Qdisc *sch,
 	struct qfq_sched *q = qdisc_priv(sch);
 	struct qfq_class *cl;
 	struct tcf_result res;
+	struct tcf_proto *fl;
 	int result;
 
 	if (TC_H_MAJ(skb->priority ^ sch->handle) == 0) {
@@ -499,7 +501,8 @@ static struct qfq_class *qfq_classify(struct sk_buff *skb, struct Qdisc *sch,
 	}
 
 	*qerr = NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
-	result = tc_classify(skb, q->filter_list, &res);
+	fl = rcu_dereference_bh(q->filter_list);
+	result = tc_classify(skb, fl, &res);
 	if (result >= 0) {
 #ifdef CONFIG_NET_CLS_ACT
 		switch (result) {

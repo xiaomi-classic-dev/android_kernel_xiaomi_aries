@@ -114,7 +114,7 @@ struct htb_class {
 	enum htb_cmode cmode;	/* current mode of the class */
 
 	/* class attached filters */
-	struct tcf_proto *filter_list;
+	struct tcf_proto __rcu *filter_list;
 	int filter_cnt;
 
 	/* token bucket parameters */
@@ -145,7 +145,7 @@ struct htb_sched {
 	int defcls;		/* class where unclassified flows go to */
 
 	/* filters for qdisc itself */
-	struct tcf_proto *filter_list;
+	struct tcf_proto __rcu *filter_list;
 
 	int rate2quantum;	/* quant = rate / rate2quantum */
 	psched_time_t now;	/* cached dequeue time */
@@ -231,7 +231,7 @@ static struct htb_class *htb_classify(struct sk_buff *skb, struct Qdisc *sch,
 			return cl;	/* we hit leaf; return it */
 
 		/* we have got inner class; apply inner filter chain */
-		tcf = cl->filter_list;
+		tcf = rcu_dereference_bh(cl->filter_list);
 	}
 	/* classification failed; try to use default class */
 	cl = htb_find(TC_H_MAKE(TC_H_MAJ(sch->handle), q->defcls), sch);
@@ -1481,11 +1481,12 @@ failure:
 	return err;
 }
 
-static struct tcf_proto **htb_find_tcf(struct Qdisc *sch, unsigned long arg)
+static struct tcf_proto __rcu **htb_find_tcf(struct Qdisc *sch,
+					     unsigned long arg)
 {
 	struct htb_sched *q = qdisc_priv(sch);
 	struct htb_class *cl = (struct htb_class *)arg;
-	struct tcf_proto **fl = cl ? &cl->filter_list : &q->filter_list;
+	struct tcf_proto __rcu **fl = cl ? &cl->filter_list : &q->filter_list;
 
 	return fl;
 }
