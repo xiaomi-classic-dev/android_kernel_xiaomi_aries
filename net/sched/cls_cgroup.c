@@ -213,7 +213,7 @@ static void cls_cgroup_destroy(struct tcf_proto *tp)
 	struct cls_cgroup_head *head = tp->root;
 
 	if (head) {
-		tcf_exts_destroy(tp, &head->exts);
+		tcf_exts_destroy(&head->exts);
 		tcf_em_tree_destroy(tp, &head->ematches);
 		kfree(head);
 	}

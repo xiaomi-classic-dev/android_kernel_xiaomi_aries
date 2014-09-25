@@ -88,7 +88,7 @@ static int basic_init(struct tcf_proto *tp)
 static void basic_delete_filter(struct tcf_proto *tp, struct basic_filter *f)
 {
 	tcf_unbind_filter(tp, &f->res);
-	tcf_exts_destroy(tp, &f->exts);
+	tcf_exts_destroy(&f->exts);
 	tcf_em_tree_destroy(tp, &f->ematches);
 	kfree(f);
 }
@@ -155,7 +155,7 @@ static int basic_set_parms(struct net *net, struct tcf_proto *tp,
 
 	return 0;
 errout:
-	tcf_exts_destroy(tp, &e);
+	tcf_exts_destroy(&e);
 	return err;
 }
 

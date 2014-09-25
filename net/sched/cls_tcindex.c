@@ -167,7 +167,7 @@ found:
 			tcf_tree_unlock(tp);
 	}
 	tcf_unbind_filter(tp, &r->res);
-	tcf_exts_destroy(tp, &r->exts);
+	tcf_exts_destroy(&r->exts);
 	kfree(f);
 	return 0;
 }
@@ -327,7 +327,7 @@ errout_alloc:
 	else if (balloc == 2)
 		kfree(cp.h);
 errout:
-	tcf_exts_destroy(tp, &e);
+	tcf_exts_destroy(&e);
 	return err;
 }
 
