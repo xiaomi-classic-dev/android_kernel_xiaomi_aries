@@ -40,3 +40,10 @@ setsockopt(sockfd, SOL_SOCKET, SO_DETACH_FILTER, &value, sizeof(value));
 
 See the BSD bpf.4 manpage and the BSD Packet Filter paper written by
 Steven McCanne and Van Jacobson of Lawrence Berkeley Laboratory.
+
+
+Extended BPF syscall and maps
+============================
+
+The BPF syscall creates maps shared between verified eBPF programs and userspace.
+See include/uapi/linux/bpf.h for commands and attributes.
