@@ -3,6 +3,7 @@
 #
 
 menuconfig NET
+	select BPF
 	bool "Networking support"
 	select NLATTR
 	---help---
