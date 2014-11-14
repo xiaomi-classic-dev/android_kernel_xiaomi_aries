@@ -110,6 +110,7 @@ enum bpf_cmd {
 
 enum bpf_map_type {
 	BPF_MAP_TYPE_UNSPEC,
+	BPF_MAP_TYPE_HASH,
 };
 
 enum bpf_prog_type {
