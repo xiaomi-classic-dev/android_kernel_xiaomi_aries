@@ -198,6 +198,7 @@ struct input_keymap_entry {
 #define SYN_CONFIG		1
 #define SYN_MT_REPORT		2
 #define SYN_DROPPED		3
+#define SYN_ALWAYS_REPORT	4
 
 /*
  * Keys and buttons
@@ -1541,6 +1542,11 @@ static inline void input_sync(struct input_dev *dev)
 static inline void input_mt_sync(struct input_dev *dev)
 {
 	input_event(dev, EV_SYN, SYN_MT_REPORT, 0);
+}
+
+static inline void input_always_sync(struct input_dev *dev)
+{
+	input_event(dev, EV_SYN, SYN_ALWAYS_REPORT, 0);
 }
 
 void input_set_capability(struct input_dev *dev, unsigned int type, unsigned int code);

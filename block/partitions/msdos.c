@@ -94,6 +94,59 @@ static int aix_magic_present(struct parsed_partitions *state, unsigned char *p)
 	return ret;
 }
 
+struct part_map_t {
+	unsigned char sys_ind;
+	char name[GENHD_PART_NAME_SIZE];
+};
+
+/* 0x4A, 0x4B, 0x58 ~ 0x5B, 0x5D used by remotefs */
+static struct part_map_t part_map[] = {
+	{0x06, "modem"},
+	{0x0c, "modem"},
+	{0x4d, "sbl1"},
+	{0x51, "sbl2"},
+	{0x47, "rpm"},
+	{0x45, "sbl3"},
+	{0x4c, "aboot"},
+	{0x48, "boot"},
+	{0x64, "boot1"},
+	{0x46, "tz"},
+	{0x65, "misc"},
+	{0x4a, "modem_st1"},
+	{0x4b, "modem_st2"},
+	{0x60, "recovery"},
+	{0x0, "noname"},
+};
+
+#define MAX_USERDATA_PARTS 5
+static char ext_part_map[MAX_USERDATA_PARTS][GENHD_PART_NAME_SIZE] = {
+	"system",
+	"system1",
+	"persist",
+	"cache",
+	"userdata",
+};
+
+static int ext_part_counter;
+static char *get_part_name_from_type(unsigned char sys_ind, int extended)
+{
+	int i = 0;
+
+	while (part_map[i].sys_ind != 0) {
+		if (sys_ind == part_map[i].sys_ind)
+			break;
+		i++;
+	}
+
+	if (part_map[i].sys_ind != 0)
+		return part_map[i].name;
+	else if ((sys_ind == LINUX_DATA_PARTITION) && extended &&
+			(ext_part_counter < MAX_USERDATA_PARTS))
+		return ext_part_map[ext_part_counter++];
+
+	return NULL;
+}
+
 /*
  * Create devices for each logical partition in an extended partition.
  * The logical partitions form a linked list, with each entry being
@@ -111,6 +164,8 @@ static void parse_extended(struct parsed_partitions *state,
 	struct partition *p;
 	Sector sect;
 	unsigned char *data;
+	char *name;
+	int len = 0;
 	sector_t this_sector, this_size;
 	sector_t sector_size = bdev_logical_block_size(state->bdev) / 512;
 	int loopct = 0;		/* number of links followed
@@ -165,7 +220,11 @@ static void parse_extended(struct parsed_partitions *state,
 					continue;
 			}
 
-			put_partition(state, state->next, next, size);
+			name = get_part_name_from_type(SYS_IND(p), 1);
+			if (name)
+				len = strlen(name) + 1;
+			put_named_partition(state, state->next, next, size,
+				name, len);
 			if (SYS_IND(p) == LINUX_RAID_PARTITION)
 				state->parts[state->next].flags = ADDPART_FLAG_RAID;
 			loopct = 0;
@@ -437,6 +496,8 @@ int msdos_partition(struct parsed_partitions *state)
 	struct partition *p;
 	struct fat_boot_sector *fb;
 	int slot;
+	char *name;
+	int len = 0;
 
 	data = read_part_sector(state, 0, &sect);
 	if (!data)
@@ -519,7 +580,10 @@ int msdos_partition(struct parsed_partitions *state)
 			strlcat(state->pp_buf, " >", PAGE_SIZE);
 			continue;
 		}
-		put_partition(state, slot, start, size);
+		name = get_part_name_from_type(SYS_IND(p), 0);
+		if (name)
+			len = strlen(name) + 1;
+		put_named_partition(state, slot, start, size, name, len);
 		if (SYS_IND(p) == LINUX_RAID_PARTITION)
 			state->parts[slot].flags = ADDPART_FLAG_RAID;
 		if (SYS_IND(p) == DM6_PARTITION)

@@ -2412,6 +2412,7 @@ static struct rcg_clk jpegd_clk = {
 	}
 static struct clk_freq_tbl clk_tbl_mdp[] = {
 	F_MDP(        0, gnd,  0,  0),
+#if 0
 	F_MDP(  9600000, pll8, 1, 40),
 	F_MDP( 13710000, pll8, 1, 28),
 	F_MDP( 27000000, pxo,  0,  0),
@@ -2425,6 +2426,7 @@ static struct clk_freq_tbl clk_tbl_mdp[] = {
 	F_MDP(128000000, pll8, 1,  3),
 	F_MDP(160000000, pll2, 1,  5),
 	F_MDP(177780000, pll2, 2,  9),
+#endif
 	F_MDP(200000000, pll2, 1,  4),
 	F_END
 };

@@ -492,6 +492,12 @@ config LEDS_OT200
 	  This option enables support for the LEDs on the Bachmann OT200.
 	  Say Y to enable LEDs on the Bachmann OT200.
 
+config LEDS_LM3554
+	tristate "LM3554 driver"
+	depends on LEDS_CLASS && I2C
+	help
+	  This option enables support for the LM3554.
+
 config LEDS_TRIGGERS
 	bool "LED Trigger support"
 	depends on LEDS_CLASS

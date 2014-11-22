@@ -127,6 +127,9 @@ struct othc_hsed_config {
 	int othc_num_accessories;
 	int video_out_gpio;
 	int ir_gpio;
+#ifdef CONFIG_MSM_HEADSET_UART_DYNAMIC_SWITCH
+	int (*enable)(int enable);
+#endif
 };
 
 struct pmic8058_othc_config_pdata {

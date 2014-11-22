@@ -19,7 +19,10 @@
 #include "mipi_dsi.h"
 #include "mipi_novatek.h"
 #include "mdp4.h"
-
+#if defined(CONFIG_LEDS_LM3530)
+#include <linux/led-lm3530.h>
+#endif
+#undef NOVATEK_BACKLIGHT
 
 static struct mipi_dsi_panel_platform_data *mipi_novatek_pdata;
 
@@ -213,6 +216,17 @@ static char display_config_set_threelane[] = {
 	0xae, 0x05, 0x15, 0x80
 };
 
+static char novatek_f4[2] = {0xf4, 0x55}; /* DTYPE_DCS_WRITE1 */
+static char novatek_8c[16] = { /* DTYPE_DCS_LWRITE */
+	0x8C, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x08, 0x08, 0x00, 0x30, 0xC0, 0xB7, 0x37};
+static char novatek_ff[2] = {0xff, 0x55 }; /* DTYPE_DCS_WRITE1 */
+
+static char set_width[5] = { /* DTYPE_DCS_LWRITE */
+	0x2A, 0x00, 0x00, 0x02, 0x1B}; /* 540 - 1 */
+static char set_height[5] = { /* DTYPE_DCS_LWRITE */
+	0x2B, 0x00, 0x00, 0x03, 0xBF}; /* 960 - 1 */
+
 #else
 
 static char sw_reset[2] = {0x01, 0x00}; /* DTYPE_DCS_WRITE */
@@ -231,20 +245,24 @@ static char set_num_of_lanes[2] = {0xae, 0x03}; /* DTYPE_DCS_WRITE1 */
 static char set_num_of_lanes[2] = {0xae, 0x01}; /* DTYPE_DCS_WRITE1 */
 #endif
 /* commands by Novatke */
-static char novatek_f4[2] = {0xf4, 0x55}; /* DTYPE_DCS_WRITE1 */
-static char novatek_8c[16] = { /* DTYPE_DCS_LWRITE */
-	0x8C, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x08, 0x08, 0x00, 0x30, 0xC0, 0xB7, 0x37};
-static char novatek_ff[2] = {0xff, 0x55 }; /* DTYPE_DCS_WRITE1 */
-
-static char set_width[5] = { /* DTYPE_DCS_LWRITE */
-	0x2A, 0x00, 0x00, 0x02, 0x1B}; /* 540 - 1 */
-static char set_height[5] = { /* DTYPE_DCS_LWRITE */
-	0x2B, 0x00, 0x00, 0x03, 0xBF}; /* 960 - 1 */
+static char cmd3_1[2] = {0x11, 0x00};
+static char cmd3_2[5] = {0x2a, 0x00, 0x00, 0x01, 0xdf};
+static char cmd3_3[5] = {0x2b, 0x00, 0x00, 0x03, 0x55};
+static char cmd3_4[5] = {0x2d, 0x00, 0x00, 0x03, 0x55};
+static char cmd3_5[2] = {0x36, 0x44};
+static char cmd3_6[2] = {0x3a, 0x77};
+static char cmd3_7[2] = {0x29, 0x00};
 #endif
 
+static char led_pwm1[2] = {0x51, 0xe0};	/* DTYPE_DCS_WRITE1 */
 static char led_pwm2[2] = {0x53, 0x24}; /* DTYPE_DCS_WRITE1 */
-static char led_pwm3[2] = {0x55, 0x00}; /* DTYPE_DCS_WRITE1 */
+static char led_pwm3[2] = {0x55, 0x01}; /* DTYPE_DCS_WRITE1 */
+
+static struct dsi_cmd_desc novatek_cmd_backlight_cmds[] = {
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm1), led_pwm1},
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm2), led_pwm2},
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm3), led_pwm3},
+};
 
 static struct dsi_cmd_desc novatek_video_on_cmds[] = {
 	{DTYPE_DCS_WRITE, 1, 0, 0, 50,
@@ -264,6 +282,7 @@ static struct dsi_cmd_desc novatek_video_on_cmds[] = {
 };
 
 static struct dsi_cmd_desc novatek_cmd_on_cmds[] = {
+#if 0
 	{DTYPE_DCS_WRITE, 1, 0, 0, 50,
 		sizeof(sw_reset), sw_reset},
 	{DTYPE_DCS_WRITE, 1, 0, 0, 10,
@@ -288,6 +307,14 @@ static struct dsi_cmd_desc novatek_cmd_on_cmds[] = {
 		sizeof(led_pwm2), led_pwm2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1,
 		sizeof(led_pwm3), led_pwm3},
+#endif
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 120, sizeof(cmd3_1), cmd3_1},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,  sizeof(cmd3_2), cmd3_2},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,  sizeof(cmd3_3), cmd3_3},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,  sizeof(cmd3_4), cmd3_4},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,  sizeof(cmd3_5), cmd3_5},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,  sizeof(cmd3_6), cmd3_6},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,  sizeof(cmd3_7), cmd3_7},
 };
 
 static struct dsi_cmd_desc novatek_display_off_cmds[] = {
@@ -391,6 +418,21 @@ static int mipi_novatek_lcd_on(struct platform_device *pdev)
 	struct mipi_panel_info *mipi;
 	struct msm_panel_info *pinfo;
 	struct dcs_cmd_req cmdreq;
+	static int blon;
+
+	if (!blon) {
+		blon = 1;
+		return 0;
+	}
+
+#ifdef NOVATEK_BACKLIGHT
+	static int blon;
+
+	if (!blon) {
+		blon = 1;
+		return 0;
+	}
+#endif
 
 	mfd = platform_get_drvdata(pdev);
 	if (!mfd)
@@ -419,6 +461,8 @@ static int mipi_novatek_lcd_on(struct platform_device *pdev)
 		cmdreq.cb = NULL;
 		mipi_dsi_cmdlist_put(&cmdreq);
 
+		mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_cmd_backlight_cmds,
+				ARRAY_SIZE(novatek_cmd_backlight_cmds));
 		/* clean up ack_err_status */
 		mipi_dsi_cmd_bta_sw_trigger();
 		mipi_novatek_manufacture_id(mfd);
@@ -456,13 +500,18 @@ static int mipi_novatek_lcd_late_init(struct platform_device *pdev)
 
 DEFINE_LED_TRIGGER(bkl_led_trigger);
 
+#ifdef NOVATEK_BACKLIGHT
 static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
 static struct dsi_cmd_desc backlight_cmd = {
 	DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm1), led_pwm1};
+#endif
 
 
 static void mipi_novatek_set_backlight(struct msm_fb_data_type *mfd)
 {
+#if defined(NOVATEK_BACKLIGHT)
+	return;
+
 	struct dcs_cmd_req cmdreq;
 
 	if (mipi_novatek_pdata &&
@@ -486,6 +535,16 @@ static void mipi_novatek_set_backlight(struct msm_fb_data_type *mfd)
 	cmdreq.cb = NULL;
 
 	mipi_dsi_cmdlist_put(&cmdreq);
+#elif defined(CONFIG_LEDS_LM3530)
+	static int bl_level_old;
+
+	pr_debug("%s: value %d\n", __func__, mfd->bl_level);
+	if (bl_level_old == mfd->bl_level)
+		return;
+
+	lm3530_level_set(mfd->bl_level);
+	bl_level_old = mfd->bl_level;
+#endif
 }
 
 static int mipi_dsi_3d_barrier_sysfs_register(struct device *dev);

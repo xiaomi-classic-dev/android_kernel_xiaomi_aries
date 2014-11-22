@@ -190,6 +190,20 @@ static struct gpiomux_setting sdcc2_suspend_config = {
 	.pull = GPIOMUX_PULL_UP,
 };
 
+#ifdef CONFIG_MMC_MSM_CARD_HW_DETECTION
+static struct gpiomux_setting microSD_hw_det_actv_config = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+
+static struct gpiomux_setting microSD_hw_det_suspend_config = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+#endif
+
 static struct gpiomux_setting sdcc5_dat_0_3_cmd_actv_cfg = {
 	.func = GPIOMUX_FUNC_2,
 	.drv = GPIOMUX_DRV_10MA,
@@ -283,7 +297,13 @@ static struct gpiomux_setting mdm2ap_status_suspend_cfg = {
 static struct gpiomux_setting cam_suspend_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_2MA,
-	.pull = GPIOMUX_PULL_DOWN,
+	.pull = GPIOMUX_PULL_UP,
+};
+
+static struct gpiomux_setting cam_suspend_2_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.dir = GPIOMUX_OUT_LOW,
 };
 
 static struct gpiomux_setting mdm2ap_sync_active_cfg = {
@@ -346,6 +366,43 @@ static struct gpiomux_setting hdmi_active_3_cfg = {
 	.pull = GPIOMUX_PULL_DOWN,
 };
 
+static struct gpiomux_setting bcmwifi_suspended_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_8MA,
+	.pull = GPIOMUX_PULL_NONE,
+};
+
+static struct gpiomux_setting bcmwifi_active_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_8MA,
+	.pull = GPIOMUX_PULL_NONE,
+};
+
+static struct gpiomux_setting bcmbt_suspended_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_8MA,
+	.pull = GPIOMUX_PULL_NONE,
+};
+
+static struct gpiomux_setting bcmbt_active_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_8MA,
+	.pull = GPIOMUX_PULL_NONE,
+};
+
+static struct gpiomux_setting bcmbt_wake_active_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_8MA,
+	.pull = GPIOMUX_PULL_DOWN,
+	.dir = GPIOMUX_OUT_LOW,
+};
+
+static struct gpiomux_setting bcmbt_wakehost_active_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_8MA,
+	.pull = GPIOMUX_PULL_DOWN,
+};
+
 static struct gpiomux_setting pmic_suspended_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_2MA,
@@ -354,7 +411,7 @@ static struct gpiomux_setting pmic_suspended_cfg = {
 
 static struct gpiomux_setting cam_active_1_cfg = {
 	.func = GPIOMUX_FUNC_1,
-	.drv = GPIOMUX_DRV_2MA,
+	.drv = GPIOMUX_DRV_4MA,
 	.pull = GPIOMUX_PULL_NONE,
 };
 
@@ -443,6 +500,120 @@ static struct gpiomux_setting mdm2ap_vddmin_suspend_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_2MA,
 	.pull = GPIOMUX_PULL_NONE,
+};
+
+static struct gpiomux_setting gpio_nc_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+};
+
+static struct gpiomux_setting boot_pin_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.dir = GPIOMUX_OUT_HIGH,
+};
+
+#ifdef CONFIG_HAPTIC_ISA1200_XIAOMI
+static struct gpiomux_setting isa1200_en_actv_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.dir = GPIOMUX_OUT_LOW,
+};
+
+static struct gpiomux_setting isa1200_en_susp_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+};
+#endif
+
+#ifdef CONFIG_MSM_HEADSET_UART_DYNAMIC_SWITCH
+static struct gpiomux_setting hs_uart_switch_active_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_NONE,
+};
+
+/* Route to UART by default (switch_en HIGH) when not requested */
+static struct gpiomux_setting hs_uart_switch_susp_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_NONE,
+	.dir = GPIOMUX_OUT_HIGH,
+};
+#endif
+
+static struct gpiomux_setting leds_active_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_NONE,
+};
+
+static struct gpiomux_setting leds_boot_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_NONE,
+};
+
+static struct gpiomux_setting leds_suspend_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+};
+
+static struct gpiomux_setting tp_power = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+
+static struct gpiomux_setting tp_intr = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+
+static struct gpiomux_setting tp_reset = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+
+#ifdef CONFIG_SENSORS_HMC5883L
+static struct gpiomux_setting hmc5883l_irq_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+#endif
+
+#ifdef CONFIG_SENSORS_ISL29028
+static struct gpiomux_setting isl29028_irq_config = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+#endif
+
+#if defined(CONFIG_SENSORS_LIS3DH_XIAOMi) || defined(CONFIG_SENSORS_LSM303D)
+static struct gpiomux_setting st_irq_config = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+};
+#endif
+
+static struct gpiomux_setting loudspeaker_suspended_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+};
+
+static struct gpiomux_setting loudspeaker_active_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_16MA,
+	.pull = GPIOMUX_PULL_UP,
 };
 
 static struct msm_gpiomux_config msm8x60_gsbi_configs[] __initdata = {
@@ -1711,6 +1882,187 @@ msm8x60_dragon_gpiomux_cfgs[] __initdata = {
 	{msm8x60_common_configs, ARRAY_SIZE(msm8x60_common_configs)},
 	{msm8x60_cam_configs, ARRAY_SIZE(msm8x60_cam_configs)},
 	{msm8x60_tmg200_configs, ARRAY_SIZE(msm8x60_tmg200_configs)},
+	{NULL, 0},
+};
+
+static struct msm_gpiomux_config msm8x60_mione_configs[] __initdata = {
+	{.gpio = 1,
+		.settings = {[GPIOMUX_ACTIVE] = &loudspeaker_active_cfg,	[GPIOMUX_SUSPENDED] = &loudspeaker_suspended_cfg,},	},
+	{.gpio = 10, /* HW EN */
+		.settings = {[GPIOMUX_ACTIVE] = &leds_active_cfg,		[GPIOMUX_SUSPENDED] = &leds_boot_cfg,},
+    },
+#ifdef CONFIG_HAPTIC_ISA1200_XIAOMI
+	{.gpio = 24,
+		.settings = {[GPIOMUX_ACTIVE] = &isa1200_en_actv_cfg,		[GPIOMUX_SUSPENDED] = &isa1200_en_susp_cfg,},		},
+	{.gpio = 25,
+		.settings = {[GPIOMUX_ACTIVE] = &isa1200_en_actv_cfg,		[GPIOMUX_SUSPENDED] = &isa1200_en_susp_cfg,},		},
+#endif
+	{.gpio = 28,
+		.settings = {[GPIOMUX_ACTIVE] = &mdp_vsync_active_cfg,          [GPIOMUX_SUSPENDED] = &mdp_vsync_suspend_cfg,},		},
+	{.gpio = 32, /* CAM_IF_MCLK */
+		.settings = {[GPIOMUX_ACTIVE] = &cam_active_1_cfg,		[GPIOMUX_SUSPENDED] = &cam_suspend_cfg,},		},
+	{.gpio = 43,
+		.settings = {							[GPIOMUX_SUSPENDED] = &i2c_suspended_config,},		},
+	{.gpio = 44,
+		.settings = {							[GPIOMUX_SUSPENDED] = &i2c_suspended_config,},		},
+	{.gpio = 47, /* CAMIF_I2C_DATA */
+		.settings = {[GPIOMUX_ACTIVE] = &cam_active_3_cfg,		[GPIOMUX_SUSPENDED] = &cam_suspend_cfg,},		},
+	{.gpio = 48, /* CAMIF_I2C_CLK */
+		.settings = {[GPIOMUX_ACTIVE] = &cam_active_3_cfg,		[GPIOMUX_SUSPENDED] = &cam_suspend_cfg,},		},
+	{.gpio = 49,
+		.settings = {[GPIOMUX_ACTIVE] = &tp_power,			[GPIOMUX_SUSPENDED] = &tp_power,},			},
+	{.gpio = 50,
+		.settings = {[GPIOMUX_ACTIVE] = &tp_intr,			[GPIOMUX_SUSPENDED] = &tp_intr,},			},
+	{.gpio = 51,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 52,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 53, /* UARTDM_TX */
+		.settings = {[GPIOMUX_ACTIVE] = &uart1dm_active,		[GPIOMUX_SUSPENDED] = &uart1dm_suspended,},		},
+	{.gpio = 54, /* UARTDM_RX */
+		.settings = {[GPIOMUX_ACTIVE] = &uart1dm_active,		[GPIOMUX_SUSPENDED] = &uart1dm_suspended,},		},
+	{.gpio = 55, /* UARTDM_CTS */
+		.settings = {[GPIOMUX_ACTIVE] = &uart1dm_active,		[GPIOMUX_SUSPENDED] = &uart1dm_suspended,},		},
+	{.gpio = 56, /* UARTDM_RFR */
+		.settings = {[GPIOMUX_ACTIVE] = &uart1dm_active,		[GPIOMUX_SUSPENDED] = &uart1dm_suspended,},		},
+	{.gpio = 59,
+		.settings = {							[GPIOMUX_SUSPENDED] = &i2c_suspended_config,},		},
+	{.gpio = 60,
+		.settings = {							[GPIOMUX_SUSPENDED] = &i2c_suspended_config,},		},
+	{.gpio = 64,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gsbi8,},				},
+	{.gpio = 65,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gsbi8,},				},
+#ifdef CONFIG_SENSORS_HMC5883L
+	{.gpio = 67,
+		.settings = {[GPIOMUX_ACTIVE] = &hmc5883l_irq_cfg,		[GPIOMUX_SUSPENDED] = &hmc5883l_irq_cfg,},		},
+#endif
+	{.gpio = 69,
+		.settings = {[GPIOMUX_ACTIVE] = &tp_reset,			[GPIOMUX_SUSPENDED] = &tp_reset, },			},
+	{.gpio = 76,
+		.settings = {							[GPIOMUX_SUSPENDED] = &boot_pin_cfg, },			},
+	{.gpio = 81,
+		.settings = {							[GPIOMUX_SUSPENDED] = &boot_pin_cfg, },			},
+	{.gpio = 84,
+		.settings = {							[GPIOMUX_SUSPENDED] = &boot_pin_cfg, },			},
+	{.gpio = 88,
+		.settings = {							[GPIOMUX_SUSPENDED] = &pmic_suspended_cfg,},		},
+	{.gpio = 91,
+		.settings = {							[GPIOMUX_SUSPENDED] = &pmic_suspended_cfg,},		},
+	{.gpio = 92,
+		.settings = {							[GPIOMUX_SUSPENDED] = &ps_hold,},			},
+	{.gpio = 108,
+		.settings = {[GPIOMUX_ACTIVE] = &msm_snddev_active_config,	[GPIOMUX_SUSPENDED] = &msm_snddev_suspend_config,},	},
+	{.gpio = 109,
+		.settings = {[GPIOMUX_ACTIVE] = &msm_snddev_active_config,	[GPIOMUX_SUSPENDED] = &msm_snddev_suspend_config,},	},
+	{.gpio = 111,
+		.settings = {[GPIOMUX_ACTIVE] = &aux_pcm_active_config,		[GPIOMUX_SUSPENDED] = &aux_pcm_suspend_config,},	},
+	{.gpio = 112,
+		.settings = {[GPIOMUX_ACTIVE] = &aux_pcm_active_config,		[GPIOMUX_SUSPENDED] = &aux_pcm_suspend_config,},	},
+	{.gpio = 113,
+		.settings = {[GPIOMUX_ACTIVE] = &aux_pcm_active_config,		[GPIOMUX_SUSPENDED] = &aux_pcm_suspend_config,},	},
+	{.gpio = 114,
+		.settings = {[GPIOMUX_ACTIVE] = &aux_pcm_active_config,		[GPIOMUX_SUSPENDED] = &aux_pcm_suspend_config,},	},
+	{.gpio = 115,
+		.settings = {							[GPIOMUX_SUSPENDED] = &console_uart,},			},
+	{.gpio = 116,
+		.settings = {							[GPIOMUX_SUSPENDED] = &console_uart,},			},
+#ifdef CONFIG_MSM_HEADSET_UART_DYNAMIC_SWITCH
+	{.gpio = 117,
+		.settings = {							[GPIOMUX_SUSPENDED] = &console_uart,},			},
+	{.gpio = 118,
+		.settings = {							[GPIOMUX_SUSPENDED] = &console_uart,},			},
+#else
+	{.gpio = 117, /* USB ISP1763 may also use 117 GPIO */
+		.settings = {[GPIOMUX_ACTIVE] = &console_uart,			[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 118,
+		.settings = {[GPIOMUX_ACTIVE] = &console_uart,			[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+#endif
+#if defined(CONFIG_SENSORS_LIS3DH_XIAOMi) || defined(CONFIG_SENSORS_LSM303D)
+	{.gpio = 123,
+		.settings = {[GPIOMUX_ACTIVE] = &st_irq_config,			[GPIOMUX_SUSPENDED] = &st_irq_config,},			},
+#endif
+#ifdef CONFIG_SENSORS_ISL29028
+	{.gpio = 124,
+		.settings = {[GPIOMUX_ACTIVE] = &isl29028_irq_config,		[GPIOMUX_SUSPENDED] = &isl29028_irq_config,},		},
+#endif
+	{.gpio = 125,
+		.settings = {[GPIOMUX_ACTIVE] = &bcmwifi_active_cfg,		[GPIOMUX_SUSPENDED] = &bcmwifi_suspended_cfg,},		},
+	{.gpio = 126,
+		.settings = {[GPIOMUX_ACTIVE] = &bcmbt_wakehost_active_cfg,	[GPIOMUX_SUSPENDED] = &bcmbt_wakehost_active_cfg,},     },
+
+#ifdef CONFIG_MMC_MSM_CARD_HW_DETECTION
+	{.gpio = 127,
+		.settings = {[GPIOMUX_ACTIVE] = &microSD_hw_det_actv_config,	[GPIOMUX_SUSPENDED] = &microSD_hw_det_suspend_config,},	},
+#endif
+	{.gpio = 131,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 132,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 133,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 134,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 137,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 138,
+		.settings = {[GPIOMUX_ACTIVE] = &leds_active_cfg,		[GPIOMUX_SUSPENDED] = &leds_suspend_cfg,},		},
+	{.gpio = 140,
+		.settings = {[GPIOMUX_ACTIVE] = &bcmbt_wake_active_cfg,		[GPIOMUX_SUSPENDED] = &bcmbt_wake_active_cfg,},		},
+	{.gpio = 139, /* CAM_PWR_EN */
+		.settings = {[GPIOMUX_ACTIVE] = &cam_active_2_cfg,		[GPIOMUX_SUSPENDED] = &cam_suspend_2_cfg,},		},
+	{.gpio = 144, /* CAM_PWR_EN */
+		.settings = {[GPIOMUX_ACTIVE] = &cam_active_2_cfg,		[GPIOMUX_SUSPENDED] = &cam_suspend_2_cfg,},		},
+#ifdef CONFIG_MSM_HEADSET_UART_DYNAMIC_SWITCH
+	{.gpio = 145,
+		.settings = {[GPIOMUX_ACTIVE] = &hs_uart_switch_active_cfg,	[GPIOMUX_SUSPENDED] = &hs_uart_switch_susp_cfg,},	},
+#else
+	{.gpio = 145,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+#endif
+	{.gpio = 147,
+		.settings = {[GPIOMUX_ACTIVE] = &bcmbt_active_cfg,		[GPIOMUX_SUSPENDED] = &bcmbt_suspended_cfg,},		},
+	{.gpio = 149,
+		.settings = {[GPIOMUX_ACTIVE] = &bcmwifi_active_cfg,		[GPIOMUX_SUSPENDED] = &bcmwifi_suspended_cfg,},		},
+	{.gpio = 152, /* FLASH_STROBE_1 */
+		.settings = {[GPIOMUX_ACTIVE] = &cam_active_2_cfg,		[GPIOMUX_SUSPENDED] = &cam_suspend_cfg,},		},
+	{.gpio = 153,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 154, /* bcm bluetooth */
+		.settings = {[GPIOMUX_ACTIVE] = &bcmbt_active_cfg,		[GPIOMUX_SUSPENDED] = &bcmbt_suspended_cfg,},		},
+	{.gpio = 155,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 156,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 157,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 158,
+		.settings = {							[GPIOMUX_SUSPENDED] = &gpio_nc_cfg,},			},
+	{.gpio = 159, /* SDCC1 data[0] */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_0_3_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 160,
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_0_3_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 161, /* SDCC1 data[2] */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_0_3_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 162, /* SDCC1 data[3] */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_0_3_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 163, /* SDCC1 data[4] */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_4_7_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 164, /* SDCC1 data[5] */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_4_7_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 165, /* SDCC1 data[6] */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_4_7_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 166, /* SDCC1 data[7] */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_4_7_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 167, /* SDCC1 CLK */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_clk_actv_cfg,		[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+	{.gpio = 168, /* SDCC1 CMD */
+		.settings = {[GPIOMUX_ACTIVE] = &sdcc1_dat_0_3_cmd_actv_cfg,	[GPIOMUX_SUSPENDED] = &sdcc1_suspend_config,},		},
+};
+
+struct msm_gpiomux_configs
+ mione_gpiomux_cfgs[] __initdata = {
+	{msm8x60_mione_configs, ARRAY_SIZE(msm8x60_mione_configs)},
 	{NULL, 0},
 };
 

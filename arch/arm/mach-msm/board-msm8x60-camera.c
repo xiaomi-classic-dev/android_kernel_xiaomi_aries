@@ -22,7 +22,8 @@
 #include "devices-msm8x60.h"
 #include "devices.h"
 
-#define GPIO_EXT_CAMIF_PWR_EN1 (PM8901_MPP_BASE + PM8901_MPPS + 13)
+/* #define GPIO_EXT_CAMIF_PWR_EN1 (PM8901_MPP_BASE + PM8901_MPPS + 13) */
+#define GPIO_EXT_CAMIF_PWR_EN1 144
 #define GPIO_WEB_CAMIF_STANDBY1 (PM8901_MPP_BASE + PM8901_MPPS + 60)
 #ifdef CONFIG_MSM_CAMERA_FLASH
 #define VFE_CAMIF_TIMER1_GPIO 29
@@ -31,13 +32,10 @@
 #define FUSION_VFE_CAMIF_TIMER1_GPIO 42
 
 static struct msm_camera_sensor_flash_src msm_flash_src = {
-	.flash_sr_type = MSM_CAMERA_FLASH_SRC_PMIC,
-	._fsrc.pmic_src.num_of_src = 2,
-	._fsrc.pmic_src.low_current  = 100,
-	._fsrc.pmic_src.high_current = 300,
-	._fsrc.pmic_src.led_src_1 = PMIC8058_ID_FLASH_LED_0,
-	._fsrc.pmic_src.led_src_2 = PMIC8058_ID_FLASH_LED_1,
-	._fsrc.pmic_src.pmic_set_current = pm8058_set_flash_led_current,
+	.flash_sr_type = MSM_CAMERA_FLASH_SRC_EXT,
+/*      ._fsrc.ext_driver_src.led_en = VFE_CAMIF_TIMER1_GPIO,
+	._fsrc.ext_driver_src.led_flash_en = VFE_CAMIF_TIMER2_GPIO, */
+	._fsrc.ext_driver_src.flash_id = MAM_CAMERA_EXT_LED_FLASH_SC628A,
 };
 static struct msm_camera_sensor_strobe_flash_data strobe_flash_xenon = {
 	.flash_trigger = VFE_CAMIF_TIMER2_GPIO,
@@ -379,26 +377,39 @@ static struct msm_camera_device_platform_data msm_camera_csi_device_data[] = {
 static struct camera_vreg_t msm_8x60_back_cam_vreg[] = {
 	{"cam_vana", REG_LDO, 2850000, 2850000, -1},
 	{"cam_vio", REG_VS, 0, 0, 0},
+	{"cam_vvcm", REG_LDO, 2800000, 2800000, -1},
+};
+
+static struct camera_vreg_t msm_8x60_back_cam_vreg1[] = {
+	{"cam_vana", REG_LDO, 2850000, 2850000, -1},
 	{"cam_vdig", REG_LDO, 1200000, 1200000, -1},
+	{"cam_vio", REG_VS, 0, 0, 0},
+	{"cam_vvcm", REG_LDO, 2800000, 2800000, -1},
+};
+
+static struct camera_vreg_t msm_8x60_front_cam_vreg[] = {
+	{"cam_vana", REG_LDO, 2850000, 2850000, -1},
+	{"cam_vdig", REG_LDO, 1200000, 1200000, -1},
+	{"cam_vio", REG_VS, 0, 0, 0},
 };
 
 static struct gpio msm8x60_common_cam_gpio[] = {
 	{32, GPIOF_DIR_IN, "CAMIF_MCLK"},
 	{47, GPIOF_DIR_IN, "CAMIF_I2C_DATA"},
 	{48, GPIOF_DIR_IN, "CAMIF_I2C_CLK"},
-	{105, GPIOF_DIR_IN, "STANDBY"},
+/*	{105, GPIOF_DIR_IN, "STANDBY"}, */
 };
 
 static struct gpio msm8x60_back_cam_gpio[] = {
 	{GPIO_EXT_CAMIF_PWR_EN1, GPIOF_DIR_OUT, "CAMIF_PWR_EN"},
-	{106, GPIOF_DIR_OUT, "CAM_RESET"},
+/*	{106, GPIOF_DIR_OUT, "CAM_RESET"}, */
 };
 
 static struct msm_gpio_set_tbl msm8x60_back_cam_gpio_set_tbl[] = {
 	{GPIO_EXT_CAMIF_PWR_EN1, GPIOF_OUT_INIT_LOW, 10000},
 	{GPIO_EXT_CAMIF_PWR_EN1, GPIOF_OUT_INIT_HIGH, 5000},
-	{106, GPIOF_OUT_INIT_LOW, 1000},
-	{106, GPIOF_OUT_INIT_HIGH, 4000},
+/*	{106, GPIOF_OUT_INIT_LOW, 1000}, */
+/*	{106, GPIOF_OUT_INIT_HIGH, 4000}, */
 };
 
 static struct msm_camera_gpio_conf msm_8x60_back_cam_gpio_conf = {
@@ -447,12 +458,25 @@ static struct msm_camera_sensor_info msm_camera_sensor_imx074_data = {
 	.actuator_info = &imx074_actuator_info
 };
 
+static struct i2c_board_info mt9e013_actuator_i2c_info = {
+	I2C_BOARD_INFO("msm_actuator", 0x5C),
+};
+
+static struct msm_actuator_info mt9e013_actuator_info = {
+	.board_info = &mt9e013_actuator_i2c_info,
+	.cam_name = MSM_ACTUATOR_MAIN_CAM_2,
+	.bus_id = MSM_GSBI4_QUP_I2C_BUS_ID,
+	.vcm_enable = 0,
+};
+
 static struct msm_camera_sensor_flash_data flash_mt9e013 = {
-	.flash_type	= MSM_CAMERA_FLASH_NONE,
+	.flash_type = MSM_CAMERA_FLASH_LED,
+	.flash_src = &msm_flash_src,
+
 };
 
 static struct msm_camera_sensor_platform_info sensor_board_info_mt9e013 = {
-	.mount_angle	= 0,
+	.mount_angle = 90,
 	.cam_vreg = msm_8x60_back_cam_vreg,
 	.num_vreg = ARRAY_SIZE(msm_8x60_back_cam_vreg),
 	.gpio_conf = &msm_8x60_back_cam_gpio_conf,
@@ -465,6 +489,73 @@ static struct msm_camera_sensor_info msm_camera_sensor_mt9e013_data = {
 	.sensor_platform_info = &sensor_board_info_mt9e013,
 	.csi_if	= 1,
 	.camera_type = BACK_CAMERA_2D,
+	.actuator_info = &mt9e013_actuator_info
+};
+
+static struct i2c_board_info s5k3h2_actuator_i2c_info = {
+	I2C_BOARD_INFO("msm_actuator", 0x18),
+};
+
+static struct msm_actuator_info s5k3h2_actuator_info = {
+	.board_info = &s5k3h2_actuator_i2c_info,
+	.cam_name = MSM_ACTUATOR_MAIN_CAM_1,
+	.bus_id = MSM_GSBI4_QUP_I2C_BUS_ID,
+	.vcm_enable = 0,
+};
+
+static struct msm_camera_sensor_flash_data flash_s5k3h2 = {
+	.flash_type = MSM_CAMERA_FLASH_LED,
+	.flash_src = &msm_flash_src,
+};
+
+static struct msm_camera_sensor_platform_info sensor_board_info_s5k3h2 = {
+	.mount_angle = 90,
+	.cam_vreg = msm_8x60_back_cam_vreg1,
+	.num_vreg = ARRAY_SIZE(msm_8x60_back_cam_vreg1),
+	.gpio_conf = &msm_8x60_back_cam_gpio_conf,
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_s5k3h2_data = {
+	.sensor_name = "s5k3h2",
+	.pdata = &msm_camera_csi_device_data[0],
+	.flash_data = &flash_s5k3h2,
+	.sensor_platform_info = &sensor_board_info_s5k3h2,
+	.csi_if = 1,
+	.camera_type = BACK_CAMERA_2D,
+	.actuator_info = &s5k3h2_actuator_info
+};
+
+static struct msm_camera_sensor_flash_data flash_imx105 = {
+	.flash_type = MSM_CAMERA_FLASH_LED,
+	.flash_src = &msm_flash_src,
+};
+
+static struct i2c_board_info imx105_actuator_i2c_info = {
+	I2C_BOARD_INFO("msm_actuator", 0x12),
+};
+
+static struct msm_actuator_info imx105_actuator_info = {
+	.board_info = &imx105_actuator_i2c_info,
+	.cam_name = MSM_ACTUATOR_MAIN_CAM_0,
+	.bus_id = MSM_GSBI4_QUP_I2C_BUS_ID,
+	.vcm_enable = 0,
+};
+
+static struct msm_camera_sensor_platform_info sensor_board_info_imx105 = {
+	.mount_angle = 90,
+	.cam_vreg = msm_8x60_back_cam_vreg1,
+	.num_vreg = ARRAY_SIZE(msm_8x60_back_cam_vreg1),
+	.gpio_conf = &msm_8x60_back_cam_gpio_conf,
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_imx105_data = {
+	.sensor_name = "imx105",
+	.pdata = &msm_camera_csi_device_data[0],
+	.flash_data = &flash_imx105,
+	.sensor_platform_info = &sensor_board_info_imx105,
+	.csi_if = 1,
+	.camera_type = BACK_CAMERA_2D,
+	.actuator_info = &imx105_actuator_info
 };
 
 static struct gpio ov7692_cam_gpio[] = {
@@ -504,6 +595,44 @@ static struct msm_camera_sensor_info msm_camera_sensor_ov7692_data = {
 	.camera_type = FRONT_CAMERA_2D,
 };
 
+static struct gpio msm_8x60_front_cam_gpio[] = {
+	{139, GPIOF_DIR_OUT, "CAM_EN"},
+};
+
+static struct msm_gpio_set_tbl msm_8x60_front_cam_gpio_set_tbl[] = {
+	{139, GPIOF_OUT_INIT_LOW, 10000},
+	{139, GPIOF_OUT_INIT_HIGH, 10000},
+};
+
+static struct msm_camera_gpio_conf msm_8x60_front_cam_gpio_conf = {
+	.cam_gpio_common_tbl = msm8x60_common_cam_gpio,
+	.cam_gpio_common_tbl_size = ARRAY_SIZE(msm8x60_common_cam_gpio),
+	.cam_gpio_req_tbl = msm_8x60_front_cam_gpio,
+	.cam_gpio_req_tbl_size = ARRAY_SIZE(msm_8x60_front_cam_gpio),
+	.cam_gpio_set_tbl = msm_8x60_front_cam_gpio_set_tbl,
+	.cam_gpio_set_tbl_size = ARRAY_SIZE(msm_8x60_front_cam_gpio_set_tbl),
+};
+
+static struct msm_camera_sensor_flash_data flash_imx132 = {
+	.flash_type = MSM_CAMERA_FLASH_NONE,
+};
+
+static struct msm_camera_sensor_platform_info sensor_board_info_imx132 = {
+	.mount_angle = 270,
+	.cam_vreg = msm_8x60_front_cam_vreg,
+	.num_vreg = ARRAY_SIZE(msm_8x60_front_cam_vreg),
+	.gpio_conf = &msm_8x60_front_cam_gpio_conf,
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_imx132_data = {
+	.sensor_name = "imx132",
+	.pdata = &msm_camera_csi_device_data[1],
+	.flash_data = &flash_imx132,
+	.sensor_platform_info = &sensor_board_info_imx132,
+	.csi_if = 1,
+	.camera_type = FRONT_CAMERA_2D,
+};
+
 static struct platform_device msm_camera_server = {
 	.name = "msm_cam_server",
 	.id = 0,
@@ -527,6 +656,18 @@ static struct i2c_board_info msm8x60_camera_i2c_boardinfo[] = {
 	{
 	I2C_BOARD_INFO("mt9e013", 0x6C),
 	.platform_data = &msm_camera_sensor_mt9e013_data,
+	},
+	{
+	I2C_BOARD_INFO("s5k3h2", 0x6E),
+	.platform_data = &msm_camera_sensor_s5k3h2_data,
+	},
+	{
+	I2C_BOARD_INFO("imx105", 0x20),
+	.platform_data = &msm_camera_sensor_imx105_data,
+	},
+	{
+	I2C_BOARD_INFO("imx132", 0x36),
+	.platform_data = &msm_camera_sensor_imx132_data,
 	},
 	{
 	I2C_BOARD_INFO("ov7692", 0x78),

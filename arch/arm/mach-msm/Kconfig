@@ -788,6 +788,13 @@ config MACH_MSM8X60_DRAGON
 	help
 	  Support for the Qualcomm MSM8x60 Dragon board.
 
+config MACH_MIONE
+	depends on ARCH_MSM8X60
+	default n
+	bool "MIONE"
+	help
+	  Support for the MIONE device based on MSM8x60.
+
 config MACH_MSM8960_CDP
 	depends on ARCH_MSM8960
 	bool "MSM8960 CDP"
@@ -2256,6 +2263,17 @@ config BT_MSM_PINTEST
 	  Bluetooth MSM Pin Connectivity test module.
 	  This driver provides support for verifying the MSM to BT pin
 	  connectivity.
+
+config MSM_HEADSET_UART_DYNAMIC_SWITCH
+	bool "Enable dynamic switching between headset/uart function for Mione device"
+	depends on ARCH_MSM8X60
+	default n
+	help
+	  On Mione device, the headset jack is routed to audio and
+	  uart through a analog switch. Say Y if you want to dynamically
+	  switch the function between them. When Y, the default function
+	  will be uart; when N, the default function will be audio,
+	  and can't switch to uart.
 
 config MSM_FAKE_BATTERY
 		depends on POWER_SUPPLY

@@ -135,7 +135,11 @@ obj-$(CONFIG_VIDEOBUF2_MEMOPS)		+= videobuf2-memops.o
 obj-$(CONFIG_VIDEOBUF2_VMALLOC)		+= videobuf2-vmalloc.o
 obj-$(CONFIG_VIDEOBUF2_DMA_CONTIG)	+= videobuf2-dma-contig.o
 obj-$(CONFIG_VIDEOBUF2_DMA_SG)		+= videobuf2-dma-sg.o
-obj-$(CONFIG_VIDEOBUF2_MSM_MEM)		+= videobuf2-msm-mem.o
+ifeq ($(CONFIG_MACH_MIONE),y)
+  obj-$(CONFIG_VIDEOBUF2_MSM_MEM)		+= videobuf2-msm-mem_legacy.o
+else
+  obj-$(CONFIG_VIDEOBUF2_MSM_MEM)		+= videobuf2-msm-mem.o
+endif
 
 obj-$(CONFIG_V4L2_MEM2MEM_DEV) += v4l2-mem2mem.o
 
@@ -212,7 +216,11 @@ obj-$(CONFIG_VIDEO_IR_I2C)  += ir-kbd-i2c.o
 
 obj-y	+= davinci/
 
-obj-$(CONFIG_MSM_CAMERA) += msm/
+ifeq ($(CONFIG_MACH_MIONE),y)
+  obj-$(CONFIG_MSM_CAMERA) += msm_legacy/
+else
+  obj-$(CONFIG_MSM_CAMERA) += msm/
+endif
 obj-$(CONFIG_ARCH_OMAP)	+= omap/
 obj-$(CONFIG_MSM_VIDC_V4L2) += msm_vidc/
 obj-$(CONFIG_MSM_WFD) += msm_wfd/

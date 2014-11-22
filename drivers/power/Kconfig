@@ -319,6 +319,16 @@ config PM8058_CHARGER
 	  pmic8058 provides a linear charging circuit connected to the usb
 	  cable on Qualcomm's msm8x60 surf board.
 
+config BATTERY_MAX17043
+	tristate "Maxim MAX17043 Fuel Gauge"
+	depends on BATTERY_MSM8X60
+	default n
+	help
+	  MAX17043 is fuel-gauge systems for lithium-ion (Li+) batteries
+	  in handheld and portable equipment. The MAX17043 is configured
+	  to operate with a single lithium cell work with Qualcomm battery
+	  system
+
 config ISL9519_CHARGER
 	tristate "isl9519 charger"
 	depends on (BATTERY_MSM8X60 || PM8921_CHARGER)

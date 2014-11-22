@@ -326,6 +326,14 @@ static int __devinit pm8901_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	/* Work around for 8901 with the revision of below 2.3 */
+	if (revision < PM8XXX_REVISION_8901_2p3) {
+		/* preload dVdd */
+		pm8xxx_preload_dVdd();
+		/* Drop the dig_byp voltage to 1.725V to reduce consumption */
+		pm8xxx_L7b_1p750();
+	}
+
 	return 0;
 
 err:

@@ -62,6 +62,7 @@ enum lm3530_mode {
 	LM3530_BL_MODE_MANUAL = 0,	/* "man" */
 	LM3530_BL_MODE_ALS,		/* "als" */
 	LM3530_BL_MODE_PWM,		/* "pwm" */
+	LM3530_BL_MODE_PWM_I2C,		/* "pwm + i2c" */
 };
 
 /* ALS input select */
@@ -116,6 +117,13 @@ struct lm3530_platform_data {
 	u8 brt_val;
 
 	struct lm3530_pwm_data pwm_data;
+
+	void (*func)(int on);
 };
+
+#define LM3530_LED_DEV "backlight"
+#define LM3530_NAME "lm3530-led"
+
+void lm3530_level_set(enum led_brightness value);
 
 #endif	/* _LINUX_LED_LM3530_H__ */

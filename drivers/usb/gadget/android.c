@@ -983,7 +983,7 @@ static int serial_function_bind_config(struct android_usb_function *f,
 	char *name, *xport_name = NULL;
 	char buf[32], *b, xport_name_buf[32], *tb;
 	int err = -1, i;
-	static int serial_initialized = 0, ports = 0;
+	static int serial_initialized, ports;
 
 	if (serial_initialized)
 		goto bind_config;

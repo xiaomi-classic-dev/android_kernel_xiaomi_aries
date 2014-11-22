@@ -102,19 +102,19 @@
 #define PM8058_CHG_ITRIM		0x1F
 #define PM8058_CHG_TTRIM		0x20
 
-#define AUTO_CHARGING_VMAXSEL				4200
-#define AUTO_CHARGING_FAST_TIME_MAX_MINUTES		512
+#define AUTO_CHARGING_VMAXSEL				4225
+#define AUTO_CHARGING_FAST_TIME_MAX_MINUTES		480
 #define AUTO_CHARGING_TRICKLE_TIME_MINUTES		30
 #define AUTO_CHARGING_VEOC_ITERM			100
 #define AUTO_CHARGING_IEOC_ITERM			160
-#define AUTO_CHARGING_RESUME_MV				4100
+#define AUTO_CHARGING_RESUME_MV				4150
 
-#define AUTO_CHARGING_VBATDET				4150
+#define AUTO_CHARGING_VBATDET				4200
 #define AUTO_CHARGING_VBATDET_DEBOUNCE_TIME_MS		3000
-#define AUTO_CHARGING_VEOC_VBATDET			4100
-#define AUTO_CHARGING_VEOC_TCHG				16
+#define AUTO_CHARGING_VEOC_VBATDET			4175
+#define AUTO_CHARGING_VEOC_TCHG				32
 #define AUTO_CHARGING_VEOC_TCHG_FINAL_CYCLE		32
-#define AUTO_CHARGING_VEOC_BEGIN_TIME_MS		5400000
+#define AUTO_CHARGING_VEOC_BEGIN_TIME_MS		7200000
 
 #define AUTO_CHARGING_VEOC_VBAT_LOW_CHECK_TIME_MS	60000
 #define AUTO_CHARGING_RESUME_CHARGE_DETECTION_COUNTER	5
@@ -764,13 +764,13 @@ static int pm8058_start_charging(struct msm_hardware_charger *hw_chg,
 	if (chg_current == 500)
 		chg_current = 450;
 
-	if (hw_chg->type == CHG_TYPE_AC && chg_data.max_source_current)
+	if (hw_chg && hw_chg->type == CHG_TYPE_AC && chg_data.max_source_current)
 		chg_current = chg_data.max_source_current;
 
 	pm8058_chg.current_charger_current = chg_current;
 	pm8058_chg_enable_irq(FASTCHG_IRQ);
 
-	ret = pm_chg_vmaxsel_set(chg_voltage);
+	ret = pm_chg_vmaxsel_set(AUTO_CHARGING_VMAXSEL);
 	if (ret)
 		goto out;
 
@@ -1452,13 +1452,13 @@ static int pm8058_stop_charging(struct msm_hardware_charger *hw_chg)
 	return 0;
 }
 
-static int get_status(void *data, u64 * val)
+int get_status(void *data, u64 *val)
 {
 	*val = pm8058_chg.current_charger_current;
 	return 0;
 }
 
-static int set_status(void *data, u64 val)
+int set_status(void *data, u64 val)
 {
 
 	pm8058_chg.current_charger_current = val;
@@ -1470,6 +1470,8 @@ static int set_status(void *data, u64 val)
 		pm8058_stop_charging(NULL);
 	return 0;
 }
+EXPORT_SYMBOL(get_status);
+EXPORT_SYMBOL(set_status);
 DEFINE_SIMPLE_ATTRIBUTE(chg_fops, get_status, set_status, "%llu\n");
 
 static int set_disable_status_param(const char *val, struct kernel_param *kp)
@@ -1736,7 +1738,9 @@ out:
 
 }
 
-#define BATT_THERM_OPEN_MV  2000
+/* modify for mione charging  -20 - 60 */
+#define BATT_THERM_OPEN_MV_HI  1950
+#define BATT_THERM_OPEN_MV_LO  860
 static int pm8058_is_battery_present(void)
 {
 	int mv_reading;
@@ -1744,7 +1748,8 @@ static int pm8058_is_battery_present(void)
 	mv_reading = 0;
 	batt_read_adc(CHANNEL_ADC_BATT_THERM, &mv_reading);
 	pr_debug("%s: therm_raw is %d\n", __func__, mv_reading);
-	if (mv_reading > 0 && mv_reading < BATT_THERM_OPEN_MV)
+	if (mv_reading > BATT_THERM_OPEN_MV_LO &&
+			mv_reading < BATT_THERM_OPEN_MV_HI)
 		return 1;
 
 	return 0;
@@ -1752,19 +1757,25 @@ static int pm8058_is_battery_present(void)
 
 static int pm8058_get_battery_temperature(void)
 {
-	return batt_read_adc(CHANNEL_ADC_BATT_THERM, NULL);
+	int ret;
+
+	ret = batt_read_adc(CHANNEL_ADC_BATT_THERM, NULL);
+	if (ret == -EINVAL) {
+		pr_err("%s: batt_temp adc error\n", __func__);
+		ret = 1;
+	}
+	return ret;
 }
 
-#define BATT_THERM_OPERATIONAL_MAX_CELCIUS 40
-#define BATT_THERM_OPERATIONAL_MIN_CELCIUS 0
+#define BATT_THERM_OPERATIONAL_MAX_CELCIUS 60
+#define BATT_THERM_OPERATIONAL_MIN_CELCIUS -20
 static int pm8058_is_battery_temp_within_range(void)
 {
 	int therm_celcius;
 
 	therm_celcius = pm8058_get_battery_temperature();
 	pr_debug("%s: therm_celcius is %d\n", __func__, therm_celcius);
-	if (therm_celcius > 0
-		&& therm_celcius > BATT_THERM_OPERATIONAL_MIN_CELCIUS
+	if (therm_celcius > BATT_THERM_OPERATIONAL_MIN_CELCIUS
 		&& therm_celcius < BATT_THERM_OPERATIONAL_MAX_CELCIUS)
 		return 1;
 
@@ -1775,10 +1786,12 @@ static int pm8058_is_battery_temp_within_range(void)
 #define BATT_ID_MIN_MV  600
 static int pm8058_is_battery_id_valid(void)
 {
+#if 0
 	int batt_id_mv;
 
 	batt_id_mv = batt_read_adc(CHANNEL_ADC_BATT_ID, NULL);
 	pr_debug("%s: batt_id_mv is %d\n", __func__, batt_id_mv);
+#endif
 
 	/*
 	 * The readings are not in range
@@ -1786,14 +1799,17 @@ static int pm8058_is_battery_id_valid(void)
 	 */
 	return 1;
 
+#if 0
 	if (batt_id_mv > 0
 		&& batt_id_mv > BATT_ID_MIN_MV
 		&& batt_id_mv < BATT_ID_MAX_MV)
 		return 1;
 
 	return 0;
+#endif
 }
 
+#ifndef CONFIG_BATTERY_MAX17043
 /* returns voltage in mV */
 static int pm8058_get_battery_mvolts(void)
 {
@@ -1809,6 +1825,7 @@ static int pm8058_get_battery_mvolts(void)
 	 */
 	return 0;
 }
+#endif
 
 static int msm_battery_gauge_alarm_notify(struct notifier_block *nb,
 		unsigned long status, void *unused)
@@ -1859,12 +1876,21 @@ static int pm8058_monitor_for_recharging(void)
 
 }
 
+extern int max17043_get_batt_soc(void);
+extern int max17043_get_batt_mvolts(void);
 static struct msm_battery_gauge pm8058_batt_gauge = {
+#ifdef CONFIG_BATTERY_MAX17043
+	.get_battery_mvolts = max17043_get_batt_mvolts,
+#else
 	.get_battery_mvolts = pm8058_get_battery_mvolts,
+#endif
 	.get_battery_temperature = pm8058_get_battery_temperature,
 	.is_battery_present = pm8058_is_battery_present,
 	.is_battery_temp_within_range = pm8058_is_battery_temp_within_range,
 	.is_battery_id_valid = pm8058_is_battery_id_valid,
+#ifdef CONFIG_BATTERY_MAX17043
+	.get_batt_remaining_capacity = max17043_get_batt_soc,
+#endif
 	.monitor_for_recharging = pm8058_monitor_for_recharging,
 };
 

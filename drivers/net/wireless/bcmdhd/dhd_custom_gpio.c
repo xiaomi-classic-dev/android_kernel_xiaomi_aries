@@ -1,8 +1,8 @@
 /*
 * Customer code to add GPIO control during WLAN start/stop
-* Copyright (C) 1999-2012, Broadcom Corporation
+* Copyright (C) 1999-2011, Broadcom Corporation
 * 
-*      Unless you and Broadcom execute a separate written software license
+*         Unless you and Broadcom execute a separate written software license
 * agreement governing use of this software, this software is licensed to you
 * under the terms of the GNU General Public License version 2 (the "GPL"),
 * available at http://www.broadcom.com/licenses/GPLv2.php, with the
@@ -20,7 +20,7 @@
 * software in any way with any other Broadcom software provided under a license
 * other than the GPL, without Broadcom's express prior written consent.
 *
-* $Id: dhd_custom_gpio.c 291086 2011-10-21 01:17:24Z $
+* $Id: dhd_custom_gpio.c,v 1.2.42.1 2010-10-19 00:41:09 Exp $
 */
 
 #include <typedefs.h>
@@ -67,10 +67,13 @@ extern int sdioh_mmc_irq(int irq);
 
 /* Customer specific Host GPIO defintion  */
 static int dhd_oob_gpio_num = -1;
+static unsigned char mac[6];
 
 module_param(dhd_oob_gpio_num, int, 0644);
 MODULE_PARM_DESC(dhd_oob_gpio_num, "DHD oob gpio number");
 
+module_param_array(mac, byte, NULL, 0644);
+MODULE_PARM_DESC(mac, "DHD mac address");
 /* This function will return:
  *  1) return :  Host gpio interrupt number per customer platform
  *  2) irq_flags_ptr : Type of Host interrupt as Level or Edge
@@ -98,7 +101,7 @@ int dhd_customer_oob_irq_map(unsigned long *irq_flags_ptr)
 
 	if (dhd_oob_gpio_num < 0) {
 		WL_ERROR(("%s: ERROR customer specific Host GPIO is NOT defined \n",
-		__FUNCTION__));
+			__FUNCTION__));
 		return (dhd_oob_gpio_num);
 	}
 
@@ -180,6 +183,10 @@ dhd_custom_get_mac_address(unsigned char *buf)
 
 	/* Customer access to MAC address stored outside of DHD driver */
 #if defined(CUSTOMER_HW2) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35))
+	if ((mac[0] != 0) || (mac[1] != 0)) {
+		bcopy((char *)&mac, buf, 6);
+		return ret;
+	}
 	ret = wifi_get_mac_addr(buf);
 #endif
 
@@ -289,5 +296,5 @@ void get_customized_country_code(char *country_iso_code, wl_country_t *cspec)
 	cspec->rev = translate_custom_table[0].custom_locale_rev;
 #endif /* EXMAPLE_TABLE */
 	return;
-#endif /* defined(CUSTOMER_HW2) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36)) */
+#endif /* defined(CUSTOMER_HW2) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39)) */
 }

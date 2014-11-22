@@ -696,6 +696,7 @@ static int __devinit pm8058_probe(struct platform_device *pdev)
 	int rc;
 	struct pm8058_platform_data *pdata = pdev->dev.platform_data;
 	struct pm8058_chip *pmic;
+	u8 smpl = 0x4; /* 0.5s timer smpl */
 
 	if (pdata == NULL) {
 		pr_err("%s: No platform_data or IRQ.\n", __func__);
@@ -734,6 +735,11 @@ static int __devinit pm8058_probe(struct platform_device *pdev)
 	if (rc < 0)
 		pr_err("%s: failed to config shutdown on hard reset: %d\n",
 								__func__, rc);
+	/* Enable SMPL */
+	rc = pm8058_writeb(pmic->dev, 0x02B, smpl);
+	if (rc)
+		pr_err("%s: Failed on pm8058_writeb for smpl: rc=%d.\n",
+			__func__, rc);
 
 	return 0;
 

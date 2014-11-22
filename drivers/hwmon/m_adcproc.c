@@ -16,6 +16,39 @@
 
 #define KELVINMIL_DEGMIL	273160
 
+#ifdef CONFIG_BATTERY_MAX17043
+static const struct adc_map_pt adcmap_batttherm[] = {
+	{2023, -30},
+	{1929, -20},
+	{1805, -10},
+	{1777, -8},
+	{1748, -6},
+	{1704, -3},
+	{1658, 0},
+	{1610, 3},
+	{1562, 6},
+	{1529, 8},
+	{1496, 10},
+	{1447, 13},
+	{1398, 16},
+	{1366, 18},
+	{1334, 20},
+	{1286, 23},
+	{1241, 26},
+	{1211, 28},
+	{1182, 30},
+	{1140, 33},
+	{1100, 36},
+	{1074, 38},
+	{1049, 40},
+	{1014, 43},
+	{981, 46},
+	{960, 48},
+	{939, 50},
+	{852, 60},
+	{783, 70},
+};
+#else
 static const struct adc_map_pt adcmap_batttherm[] = {
 	{2020,	-30},
 	{1923,	-20},
@@ -31,6 +64,7 @@ static const struct adc_map_pt adcmap_batttherm[] = {
 	{453,	 70},
 	{364,	 80}
 };
+#endif
 
 static const struct adc_map_pt adcmap_msmtherm[] = {
 	{2150,	-30},

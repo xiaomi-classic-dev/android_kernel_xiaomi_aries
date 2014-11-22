@@ -91,6 +91,10 @@ struct msm_charger_platform_data {
 	unsigned int max_voltage;
 	unsigned int min_voltage;
 	unsigned int (*get_batt_capacity_percent) (void);
+#ifdef CONFIG_BATTERY_MAX17043
+	int (*get_batt_mvolts) (void);
+	bool (*get_batt_ready) (void);
+#endif
 };
 
 typedef void (*notify_vbus_state) (int);
@@ -102,6 +106,7 @@ int msm_charger_unregister(struct msm_hardware_charger *hw_chg);
 int msm_charger_notify_event(struct msm_hardware_charger *hw_chg,
 			     enum msm_hardware_charger_event event);
 void msm_charger_vbus_draw(unsigned int mA);
+int battery_charging(void);
 
 int msm_charger_register_vbus_sn(void (*callback)(int));
 void msm_charger_unregister_vbus_sn(void (*callback)(int));

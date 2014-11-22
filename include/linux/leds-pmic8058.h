@@ -27,6 +27,8 @@ struct pmic8058_led {
 	const char	*default_trigger;
 	unsigned	max_brightness;
 	int		id;
+	int		pwm_id;
+	unsigned int	pwm_period_ns;
 };
 
 struct pmic8058_leds_platform_data {

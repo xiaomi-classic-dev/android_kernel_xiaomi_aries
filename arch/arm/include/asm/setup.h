@@ -143,6 +143,18 @@ struct tag_memclk {
 	__u32 fmemclk;
 };
 
+#define ATAG_POWERUP_REASON 0xf1000401
+
+struct tag_powerup_reason {
+	u32 powerup_reason;
+};
+
+#define ATAG_MEM_VENDOR 0xf1000402
+
+struct tag_memvendor {
+	u32 memvendor;
+};
+
 struct tag {
 	struct tag_header hdr;
 	union {
@@ -165,6 +177,9 @@ struct tag {
 		 * DC21285 specific
 		 */
 		struct tag_memclk	memclk;
+
+		struct tag_powerup_reason	powerup_reason;
+		struct tag_memvendor	memvendor;
 	} u;
 };
 

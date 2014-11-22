@@ -31,6 +31,7 @@
 #include <linux/uaccess.h>
 #include <mach/clk.h>
 #include <mach/msm_xo.h>
+#include <linux/gpio.h>
 
 #define MSM_USB_BASE	(dev->regs)
 #define USB_LINK_RESET_TIMEOUT	(msecs_to_jiffies(10))
@@ -2538,9 +2539,47 @@ const struct file_operations otgfs_info_fops = {
 	.read	= otg_info_read,
 };
 
+static ssize_t otg_idvbus_write(struct file *file, const char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	pr_info("otg set vbus: %s", buf);
+	if (buf[0] == '1')
+		gpio_direction_output(62, 1);
+	else
+		gpio_direction_output(62, 0);
+
+	return count;
+}
+
+static ssize_t otg_idvbus_read(struct file *file, char __user *buf,
+				size_t len, loff_t *pos)
+{
+
+	char buff[2];
+
+	if (is_host()) {
+		buff[0] = 'H'; buff[1] = 0x0a;
+	} else {
+		buff[0] = 'P'; buff[1] = 0x0a;
+	}
+
+	if (copy_to_user(buf, buff, 2)) {
+		return -EFAULT;
+	}
+
+	return 1;
+}
+
+const struct file_operations otgidfs_fops = {
+	.open   = otg_open,
+	.read   = otg_idvbus_read,
+	.write  = otg_idvbus_write,
+};
+
 struct dentry *otg_debug_root;
 struct dentry *otg_debug_mode;
 struct dentry *otg_debug_info;
+struct dentry *otg_debug_idvbus;
 #endif
 
 static int otg_debugfs_init(struct msm_otg *dev)
@@ -2560,6 +2599,12 @@ static int otg_debugfs_init(struct msm_otg *dev)
 						otg_debug_root, dev,
 						&otgfs_info_fops);
 	if (!otg_debug_info)
+		goto free_mode;
+
+	otg_debug_idvbus = debugfs_create_file("idvbus", 0666,
+						otg_debug_root, dev,
+						&otgidfs_fops);
+	if (!otg_debug_idvbus)
 		goto free_mode;
 
 	return 0;

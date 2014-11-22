@@ -2,6 +2,7 @@
 #include <linux/blkdev.h>
 #include <linux/genhd.h>
 
+#define PART_NAME_SIZE 128
 /*
  * add_gd_partition adds a partitions details to the devices partition
  * description.
@@ -15,6 +16,7 @@ struct parsed_partitions {
 		int flags;
 		bool has_info;
 		struct partition_meta_info info;
+		char name[PART_NAME_SIZE];
 	} parts[DISK_MAX_PARTS];
 	int next;
 	int limit;
@@ -36,7 +38,8 @@ static inline void *read_part_sector(struct parsed_partitions *state,
 }
 
 static inline void
-put_partition(struct parsed_partitions *p, int n, sector_t from, sector_t size)
+put_named_partition(struct parsed_partitions *p, int n, sector_t from,
+	sector_t size, const char *name, size_t name_size)
 {
 	if (n < p->limit) {
 		char tmp[1 + BDEVNAME_SIZE + 10 + 1];
@@ -45,7 +48,21 @@ put_partition(struct parsed_partitions *p, int n, sector_t from, sector_t size)
 		p->parts[n].size = size;
 		snprintf(tmp, sizeof(tmp), " %s%d", p->name, n);
 		strlcat(p->pp_buf, tmp, PAGE_SIZE);
+		printk(" %s%d", p->name, n);
+		if (name) {
+			if (name_size > PART_NAME_SIZE - 1)
+				name_size = PART_NAME_SIZE - 1;
+			memcpy(p->parts[n].name, name, name_size);
+			p->parts[n].name[name_size] = 0;
+			printk(" (%s)", p->parts[n].name);
+		}
 	}
+}
+
+static inline void
+put_partition(struct parsed_partitions *p, int n, sector_t from, sector_t size)
+{
+	put_named_partition(p, n, from, size, NULL, 0);
 }
 
 extern int warn_no_part;

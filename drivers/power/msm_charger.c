@@ -24,7 +24,9 @@
 #include <linux/time.h>
 #include <linux/slab.h>
 #include <linux/wakelock.h>
-
+#ifdef CONFIG_HAS_EARLYSUSPEND
+#include <linux/earlysuspend.h>
+#endif
 #include <asm/atomic.h>
 
 #include <mach/msm_hsusb.h>
@@ -32,13 +34,17 @@
 #define MSM_CHG_MAX_EVENTS		16
 #define CHARGING_TEOC_MS		9000000
 #define UPDATE_TIME_MS			60000
-#define RESUME_CHECK_PERIOD_MS		60000
+#define RESUME_CHECK_PERIOD_MS		600000
+#define RESUME_CHECK_PERIOD_MS_LOW	30000
 
 #define DEFAULT_BATT_MAX_V		4200
 #define DEFAULT_BATT_MIN_V		3200
 
 #define MSM_CHARGER_GAUGE_MISSING_VOLTS 3500
 #define MSM_CHARGER_GAUGE_MISSING_TEMP  35
+
+#define MSM_PMIC8058_BAT_VOL_MIN	3500
+#define MSM_PMIC8058_BAT_VOL_ALERT	3600
 /**
  * enum msm_battery_status
  * @BATT_STATUS_ABSENT: battery not present
@@ -99,6 +105,7 @@ struct msm_charger_mux {
 	struct msm_hardware_charger_priv *current_mon_priv;
 
 	unsigned int (*get_batt_capacity_percent) (void);
+	int chg_current;
 
 	struct msm_charger_event *queue;
 	int tail;
@@ -108,6 +115,9 @@ struct msm_charger_mux {
 	struct work_struct queue_work;
 	struct workqueue_struct *event_wq_thread;
 	struct wake_lock wl;
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	struct early_suspend early_suspend;
+#endif				/* CONFIG_HAS_EARLYSUSPEND */
 };
 
 static struct msm_charger_mux msm_chg;
@@ -140,6 +150,13 @@ static int is_batt_status_charging(void)
 		return 1;
 	return 0;
 }
+
+int battery_charging(void)
+{
+	return is_batt_status_charging();
+}
+
+EXPORT_SYMBOL(battery_charging);
 
 static int is_battery_present(void)
 {
@@ -312,6 +329,7 @@ static enum power_supply_property msm_batt_power_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_TEMP,
 };
 
 static int msm_batt_power_get_property(struct power_supply *psy,
@@ -332,7 +350,11 @@ static int msm_batt_power_get_property(struct power_supply *psy,
 		val->intval = !(msm_chg.batt_status == BATT_STATUS_ABSENT);
 		break;
 	case POWER_SUPPLY_PROP_TECHNOLOGY:
+#ifdef CONFIG_BATTERY_MAX17043
+		val->intval = POWER_SUPPLY_TECHNOLOGY_LIPO;
+#else
 		val->intval = POWER_SUPPLY_TECHNOLOGY_NiMH;
+#endif
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
 		val->intval = msm_chg.max_voltage * 1000;
@@ -341,10 +363,13 @@ static int msm_batt_power_get_property(struct power_supply *psy,
 		val->intval = msm_chg.min_voltage * 1000;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		val->intval = get_prop_battery_mvolts();
+		val->intval = get_prop_battery_mvolts() * 1000;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = get_prop_batt_capacity();
+		break;
+	case POWER_SUPPLY_PROP_TEMP:
+		val->intval = get_battery_temperature() * 10;
 		break;
 	default:
 		return -EINVAL;
@@ -429,13 +454,12 @@ static inline void debug_print(const char *func,
 	dev_dbg(msm_chg.dev,
 		"%s current=(%s)(s=%d)(r=%d) new=(%s)(s=%d)(r=%d) batt=%d En\n",
 		func,
+		msm_chg.current_chg_priv ? msm_chg.current_chg_priv->hw_chg->
+		name : "none",
 		msm_chg.current_chg_priv ? msm_chg.current_chg_priv->
-		hw_chg->name : "none",
-		msm_chg.current_chg_priv ? msm_chg.
-		current_chg_priv->hw_chg_state : -1,
-		msm_chg.current_chg_priv ? msm_chg.current_chg_priv->
-		hw_chg->rating : -1,
-		hw_chg_priv ? hw_chg_priv->hw_chg->name : "none",
+		hw_chg_state : -1,
+		msm_chg.current_chg_priv ? msm_chg.current_chg_priv->hw_chg->
+		rating : -1, hw_chg_priv ? hw_chg_priv->hw_chg->name : "none",
 		hw_chg_priv ? hw_chg_priv->hw_chg_state : -1,
 		hw_chg_priv ? hw_chg_priv->hw_chg->rating : -1,
 		msm_chg.batt_status);
@@ -597,9 +621,23 @@ static void handle_battery_removed(void)
 	}
 }
 
+#ifdef CONFIG_BATTERY_MAX17043
+#define SAFE_TMP_HIGH  45
+#define SAFE_CHG_CURR  400
+
+void max17043_temperature_compensation(int temp);
+int get_status(void *data, u64 *val);
+int set_status(void *data, u64 val);
+#endif
+
 static void update_heartbeat(struct work_struct *work)
 {
-	int temperature;
+	int temperature, voltage;
+	int delay;
+#ifdef CONFIG_BATTERY_MAX17043
+	struct msm_hardware_charger *usb_hw_chg;
+	u64 chg_curr = 0;
+#endif
 
 	if (msm_chg.batt_status == BATT_STATUS_ABSENT
 		|| msm_chg.batt_status == BATT_STATUS_ID_INVALID) {
@@ -625,12 +663,51 @@ static void update_heartbeat(struct work_struct *work)
 	pr_debug("msm-charger %s batt_status= %d\n",
 				__func__, msm_chg.batt_status);
 
+#ifdef CONFIG_BATTERY_MAX17043
+	/* temperature compensation to max17043 */
+	temperature = get_battery_temperature();
+	max17043_temperature_compensation(temperature);
+
+	/* Charging thermal protection
+	 * HW will protect between 0C - 55C, SW will low down the charging
+	 * current to 400 when above 45C, the function should never get
+	 * temperature that outside (0,55)
+	 */
+
+	if (msm_chg.current_chg_priv) {
+		if (msm_chg.current_chg_priv->hw_chg_state
+		    != CHG_CHARGING_STATE)
+			goto out;
+	} else
+		goto out;
+
+	get_status(NULL, &chg_curr);
+	usb_hw_chg = msm_chg.current_chg_priv->hw_chg;
+	/* fall back to normal temperature, resume charging */
+	if ((temperature > SAFE_TMP_HIGH)) {
+		if (chg_curr != SAFE_CHG_CURR) {
+			msm_chg.chg_current = chg_curr;
+			set_status(usb_hw_chg, SAFE_CHG_CURR);
+			pr_debug("chg enter safe charging\n");
+		}
+	} else {
+		if (chg_curr == SAFE_CHG_CURR) {
+			set_status(usb_hw_chg, msm_chg.chg_current);
+			pr_debug("chg out safe charging\n");
+		}
+	}
+
+	pr_debug("update chg type:%d temp:%d, curr:%llu\n",
+		 usb_hw_chg->type, temperature, chg_curr);
+out:
+#else
 	if (msm_chg.current_chg_priv
 		&& msm_chg.current_chg_priv->hw_chg_state
 			== CHG_CHARGING_STATE) {
 		temperature = get_battery_temperature();
 		/* TODO implement JEITA SPEC*/
 	}
+#endif
 
 	/* notify that the voltage has changed
 	 * the read of the capacity will trigger a
@@ -641,10 +718,19 @@ static void update_heartbeat(struct work_struct *work)
 		msm_chg.stop_update = 0;
 		return;
 	}
+
+	voltage = get_prop_battery_mvolts();
+	delay = msm_chg.update_time;
+	/* speed up polling if the battery voltage is low */
+	if (!is_batt_status_charging()) {
+		if (voltage < MSM_PMIC8058_BAT_VOL_MIN)
+			delay = 2000;
+		else if (voltage < MSM_PMIC8058_BAT_VOL_ALERT)
+			delay = 30000;
+	}
 	queue_delayed_work(msm_chg.event_wq_thread,
-				&msm_chg.update_heartbeat_work,
-			      round_jiffies_relative(msecs_to_jiffies
-						     (msm_chg.update_time)));
+			   &msm_chg.update_heartbeat_work,
+			   round_jiffies_relative(msecs_to_jiffies(delay)));
 }
 
 /* set the charger state to READY before calling this */
@@ -717,6 +803,12 @@ static void handle_charger_ready(struct msm_hardware_charger_priv *hw_chg_priv)
 			if (is_batt_status_charging())
 				msm_chg.batt_status = BATT_STATUS_DISCHARGING;
 		}
+	} else {
+		/* if already in charging state, and the new charger is same as old one
+		 * just put charge to CHARGING_STATE again */
+		if (is_batt_status_charging())
+			msm_chg.current_chg_priv->hw_chg_state =
+			    CHG_CHARGING_STATE;
 	}
 }
 
@@ -776,6 +868,26 @@ static void handle_charger_removed(struct msm_hardware_charger_priv
 	}
 }
 
+static char *event_dbg[] = {
+	"CHG_INSERTED_EVENT",
+	"CHG_ENUMERATED_EVENT",
+	"CHG_REMOVED_EVENT",
+	"CHG_DONE_EVENT",
+	"CHG_BATT_BEGIN_FAST_CHARGING",
+	"CHG_BATT_CHG_RESUME",
+	"CHG_BATT_TEMP_OUTOFRANGE",
+	"CHG_BATT_TEMP_INRANGE",
+	"CHG_BATT_INSERTED",
+	"CHG_BATT_REMOVED",
+};
+
+static char *chg_state_dbg[] = {
+	"CHG_ABSENT_STATE",
+	"CHG_PRESENT_STATE",
+	"CHG_READY_STATE",
+	"CHG_CHARGING_STATE",
+};
+
 static void handle_event(struct msm_hardware_charger *hw_chg, int event)
 {
 	struct msm_hardware_charger_priv *priv = NULL;
@@ -787,6 +899,13 @@ static void handle_event(struct msm_hardware_charger *hw_chg, int event)
 	if (hw_chg)
 		priv = hw_chg->charger_private;
 
+	if (hw_chg)
+		printk(KERN_DEBUG "%s %s from %s %s\n", __func__,
+		       event_dbg[event], chg_state_dbg[priv->hw_chg_state],
+		       hw_chg->name);
+	else
+		printk(KERN_DEBUG "%s %s from non-charger", __func__,
+		       event_dbg[event]);
 	mutex_lock(&msm_chg.status_lock);
 
 	switch (event) {
@@ -986,13 +1105,12 @@ void msm_charger_vbus_draw(unsigned int mA)
 		usb_hw_chg_priv->max_source_current = mA;
 		msm_charger_notify_event(usb_hw_chg_priv->hw_chg,
 						CHG_ENUMERATED_EVENT);
-	} else
-		/* remember the current, to be used when charger is ready */
-		usb_chg_current = mA;
+	}
 }
 
 static int determine_initial_batt_status(void)
 {
+	int rc;
 	if (is_battery_present())
 		if (is_battery_id_valid())
 			if (is_battery_temp_within_range())
@@ -1008,6 +1126,12 @@ static int determine_initial_batt_status(void)
 	if (is_batt_status_capable_of_charging())
 		handle_battery_inserted();
 
+	rc = power_supply_register(msm_chg.dev, &msm_psy_batt);
+	if (rc < 0) {
+		dev_err(msm_chg.dev, "%s: power_supply_register failed"
+			" rc=%d\n", __func__, rc);
+		return rc;
+	}
 	/* start updaing the battery powersupply every msm_chg.update_time
 	 * milliseconds */
 	queue_delayed_work(msm_chg.event_wq_thread,
@@ -1019,6 +1143,9 @@ static int determine_initial_batt_status(void)
 	return 0;
 }
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void msm_chg_late_resume(struct early_suspend *handler);
+#endif
 static int __devinit msm_charger_probe(struct platform_device *pdev)
 {
 	msm_chg.dev = &pdev->dev;
@@ -1067,6 +1194,11 @@ static int __devinit msm_charger_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&msm_chg.update_heartbeat_work, update_heartbeat);
 
 	wake_lock_init(&msm_chg.wl, WAKE_LOCK_SUSPEND, "msm_charger");
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	msm_chg.early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 2;
+	msm_chg.early_suspend.resume = msm_chg_late_resume;
+	register_early_suspend(&msm_chg.early_suspend);
+#endif
 	return 0;
 }
 
@@ -1147,20 +1279,11 @@ EXPORT_SYMBOL(msm_charger_register);
 
 void msm_battery_gauge_register(struct msm_battery_gauge *batt_gauge)
 {
-	int rc;
-
 	if (msm_batt_gauge) {
 		msm_batt_gauge = batt_gauge;
 		pr_err("msm-charger %s multiple battery gauge called\n",
 								__func__);
 	} else {
-		rc = power_supply_register(msm_chg.dev, &msm_psy_batt);
-		if (rc < 0) {
-			dev_err(msm_chg.dev, "%s: power_supply_register failed"
-					" rc=%d\n", __func__, rc);
-			return;
-		}
-
 		msm_batt_gauge = batt_gauge;
 		determine_initial_batt_status();
 	}
@@ -1214,6 +1337,32 @@ static int msm_charger_resume(struct device *dev)
 	return 0;
 }
 
+int msm_charger_update_heartbeat(void)
+{
+	dev_dbg(msm_chg.dev, "%s update:%d\n", __func__, msm_chg.stop_update);
+	/* msm_charger has resumed */
+	if (msm_chg.stop_update == 0) {
+		cancel_delayed_work(&msm_chg.update_heartbeat_work);
+		queue_delayed_work(msm_chg.event_wq_thread,
+				   &msm_chg.update_heartbeat_work, 0);
+	} else {
+		dev_err(msm_chg.dev, "%s charger has not resumed\n", __func__);
+		return -1;
+	}
+
+	return 0;
+}
+
+EXPORT_SYMBOL(msm_charger_update_heartbeat);
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void msm_chg_late_resume(struct early_suspend *handler)
+{
+	dev_dbg(msm_chg.dev, "%s\n", __func__);
+	msm_charger_update_heartbeat();
+}
+#endif
+
 static SIMPLE_DEV_PM_OPS(msm_charger_pm_ops,
 		msm_charger_suspend, msm_charger_resume);
 
@@ -1236,8 +1385,7 @@ static int __init msm_charger_init(void)
 	mutex_init(&msm_chg.msm_hardware_chargers_lock);
 
 	msm_chg.queue = kzalloc(sizeof(struct msm_charger_event)
-				* MSM_CHG_MAX_EVENTS,
-				GFP_KERNEL);
+				* MSM_CHG_MAX_EVENTS, GFP_KERNEL);
 	if (!msm_chg.queue) {
 		rc = -ENOMEM;
 		goto out;

@@ -224,6 +224,8 @@ int pm8xxx_aux_clk_control(enum pm8xxx_aux_clk_id clk_id,
  * RETURNS: an appropriate -ERRNO error value on error, or zero for success.
  */
 int pm8xxx_hsed_bias_control(enum pm8xxx_hsed_bias bias, bool enable);
+
+int pm8xxx_L7b_1p750(void);
 #else
 
 static inline int pm8xxx_reset_pwr_off(int reset)
@@ -279,6 +281,10 @@ static inline int pm8xxx_hsed_bias_control(enum pm8xxx_hsed_bias bias,
 	return -ENODEV;
 }
 
+static inline int pm8xxx_L7b_1p725(void)
+{
+	return -ENODEV;
+}
 #endif
 
 #endif

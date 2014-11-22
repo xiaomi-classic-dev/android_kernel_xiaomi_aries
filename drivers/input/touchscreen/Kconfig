@@ -110,6 +110,18 @@ config TOUCHSCREEN_ATMEL_MXT
 	  To compile this driver as a module, choose M here: the
 	  module will be called atmel_mxt_ts.
 
+config TOUCHSCREEN_ATMEL_MXT_XIAOMI
+	tristate "Xiaomi Atmel mXT I2C Touchscreen"
+	depends on I2C
+	help
+	  Say Y here if you have Xiaomi Atmel mXT series I2C touchscreen,
+	  such as AT42QT602240/ATMXT224, connected to your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called atmel_mxt_ts_xiaomi.
+
 config TOUCHSCREEN_AUO_PIXCIR
 	tristate "AUO in-cell touchscreen using Pixcir ICs"
 	depends on I2C
@@ -977,5 +989,55 @@ config TOUCHSCREEN_CHARGER_NOTIFY
 	  The touch firmware will use this information to decide whether
 	  a new algorithm to reduce the noise impact needs to be applied
 	  or not.
+
+config TOUCHSCREEN_FT5X0X
+       tristate
+       default n
+       help
+         Say Y here if you want to support a Focaltech FT5X0X touchscreen.
+
+         To compile this driver as a module, choose M here: the
+         module will be called ft5x0x_ts.
+
+config TOUCHSCREEN_FT5X0X_TYPEB
+       bool "report points by typeB"
+       depends on TOUCHSCREEN_FT5X0X
+       default y
+       help
+         y for support n for not.
+
+config TOUCHSCREEN_FT5X0X_CALIBRATE
+       bool "calibrate after flash firmware"
+       depends on TOUCHSCREEN_FT5X0X
+       default y
+       help
+         must turn off after all pre-production device get upgrade.
+
+config TOUCHSCREEN_FT5X0X_I2C
+       tristate "Focaltech FT5X0X I2C touchscreens"
+       depends on I2C
+       select TOUCHSCREEN_FT5X0X
+       help
+         Say Y here if you have a Focaltech FT5X0X I2C touchscreen connected
+         to your system.
+
+         If unsure, say N.
+
+         To compile this driver as a set of modules, choose M here: the
+         modules will be called ft5x0x_ts_i2c.
+
+config TOUCHSCREEN_FT5X0X_SPI
+       tristate "Focaltech FT5X0X SPI touchscreens"
+       depends on SPI
+       select TOUCHSCREEN_FT5X0X
+       help
+         Say Y here if you have a Focaltech FT5X0X SPI touchscreen connected
+         to your system.
+
+         If unsure, say N.
+
+         To compile this driver as a set of modules, choose M here: the
+         modules will be called ft5x0x_ts_spi.
+
 endif
 

@@ -674,4 +674,56 @@ config BMP18X_I2C
          To compile this driver as a module, choose M here: the
          module will be called bmp18x-i2c.
 
+config SENSORS_HMC5883L
+	tristate "HMC5883L Compass Driver"
+	depends on I2C
+	default n
+	help
+	  HMC5883L Compass Driver from Honeywell.
+
+config SENSORS_ISL29028
+	tristate "ISL29028 proximity and light sensor"
+	depends on I2C
+	default n
+	help
+	  Say Y here to enable the ISL29028 Short Distance Proximity
+	  Sensor with Ambient Light Sensor.
+
+config SENSORS_LIS3DH_XIAOMI
+	tristate "LIS3DH acceleration sensor support"
+	depends on I2C
+	default n
+	help
+	  Driver for Xiaomi STMicro LIS3DH accelerometer - digital motion sensor.
+
+config SENSORS_LIS3DH_XIAOMI_EARLYSUSPEND
+	bool "LIS3DH early suspend support"
+	depends on SENSORS_LIS3DH_XIAOMI
+	select HAS_EARLYSUSPEND
+	default n
+	help
+	  Enable XIaomi LIS3DH early suspend feature
+
+config SENSORS_LSM303D
+	tristate "LSM303D combo sensor support"
+	depends on I2C
+	default n
+	help
+	  Driver for STMicro LSM303D accelerometer and magnetometer.
+
+config SENSORS_LSM303D_EARLYSUSPEND
+	bool "LSM303D early suspend support"
+	depends on SENSORS_LSM303D
+	select HAS_EARLYSUSPEND
+	default n
+	help
+	  Enable LSM303D early suspend feature
+
+config SENSORS_BMC055
+	tristate "BMC055 eCompass Sensor Driver"
+	depends on I2C
+	help
+	  Driver for Bosch BMC055/BMC056, which contains of BMA255 and BMM050.
+	  BMA255 is an Accelerometer and BMM050 is a magnetometer.
+
 endif

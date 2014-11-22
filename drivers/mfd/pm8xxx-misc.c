@@ -1160,6 +1160,42 @@ int pm8xxx_hsed_bias_control(enum pm8xxx_hsed_bias bias, bool enable)
 }
 EXPORT_SYMBOL(pm8xxx_hsed_bias_control);
 
+int pm8xxx_L7b_1p750(void)
+{
+	struct pm8xxx_misc_chip *chip;
+	unsigned long flags;
+	int rc = 0;
+
+	spin_lock_irqsave(&pm8xxx_misc_chips_lock, flags);
+
+	/* Loop over all attached PMICs and call specific functions for them. */
+	list_for_each_entry(chip, &pm8xxx_misc_chips, link) {
+		switch (chip->version) {
+		case PM8XXX_VERSION_8901:
+			rc = pm8xxx_writeb(chip->dev->parent, 0x03D, 0x25);
+			if (rc)
+				pr_err("pm8xxx_write fail 0x03D %d\n", rc);
+
+			rc = pm8xxx_misc_masked_write(chip, 0x03E, 0xF2, 0xA0);
+			if (rc)
+				pr_err("pm8xxx_write fail 0x03E %d\n", rc);
+			break;
+		default:
+			/* PMIC doesn't have preload_dVdd; do nothing. */
+			break;
+		}
+		if (rc) {
+			pr_err("preload_dVdd failed, rc=%d\n", rc);
+			break;
+		}
+	}
+
+	spin_unlock_irqrestore(&pm8xxx_misc_chips_lock, flags);
+
+	return rc;
+}
+EXPORT_SYMBOL_GPL(pm8xxx_L7b_1p750);
+
 static int __devinit pm8xxx_misc_probe(struct platform_device *pdev)
 {
 	const struct pm8xxx_misc_platform_data *pdata = pdev->dev.platform_data;
