@@ -234,6 +234,8 @@ struct sg_table *ion_sg_table(struct ion_client *client,
  * will return a non-secure uncached mapping.
  */
 void *ion_map_kernel(struct ion_client *client, struct ion_handle *handle);
+void *ion_map_kernel_legacy(struct ion_client *client, struct ion_handle *handle,
+                unsigned long flags);
 
 /**
  * ion_unmap_kernel() - destroy a kernel mapping for a handle
@@ -515,6 +517,13 @@ struct ion_allocation_data {
 	struct ion_handle *handle;
 };
 
+struct ion_allocation_data_legacy {
+	size_t len;
+	size_t align;
+	unsigned int flags;
+	struct ion_handle *handle;
+};
+
 /**
  * struct ion_fd_data - metadata passed to/from userspace for a handle/fd pair
  * @handle:	a handle
@@ -561,6 +570,9 @@ struct ion_custom_data {
 #define ION_IOC_ALLOC		_IOWR(ION_IOC_MAGIC, 0, \
 				      struct ion_allocation_data)
 
+#define ION_IOC_ALLOC_LEGACY	_IOWR(ION_IOC_MAGIC, 0, \
+				      struct ion_allocation_data_legacy)
+
 /**
  * DOC: ION_IOC_FREE - free memory
  *
@@ -597,6 +609,7 @@ struct ion_custom_data {
  * filed set to the corresponding opaque handle.
  */
 #define ION_IOC_IMPORT		_IOWR(ION_IOC_MAGIC, 5, struct ion_fd_data)
+#define ION_IOC_IMPORT_LEGACY		_IOWR(ION_IOC_MAGIC, 5, int)
 
 /**
  * DOC: ION_IOC_CUSTOM - call architecture specific ion ioctl
