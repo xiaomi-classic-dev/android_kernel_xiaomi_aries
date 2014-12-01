@@ -93,4 +93,7 @@
 
 #define SO_LOCK_FILTER		44
 
+#define SO_ATTACH_BPF		50
+#define SO_DETACH_BPF		SO_DETACH_FILTER
+
 #endif /* _ASM_SOCKET_H */

@@ -68,6 +68,9 @@
 
 #define SO_LOCK_FILTER		0x0028
 
+#define SO_ATTACH_BPF		0x0034
+#define SO_DETACH_BPF		SO_DETACH_FILTER
+
 /* Security levels - as per NRL IPv6 - don't actually do anything */
 #define SO_SECURITY_AUTHENTICATION		0x5001
 #define SO_SECURITY_ENCRYPTION_TRANSPORT	0x5002
