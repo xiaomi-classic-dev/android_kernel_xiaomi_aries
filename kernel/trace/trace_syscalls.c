@@ -538,7 +538,7 @@ static void perf_syscall_enter(void *ignore, struct pt_regs *regs, long id)
 		return;
 
 	rec = (struct syscall_trace_enter *)perf_trace_buf_prepare(size,
-				sys_data->enter_event->event.type, regs, &rctx);
+				sys_data->enter_event->event.type, NULL, &rctx);
 	if (!rec)
 		return;
 
@@ -617,7 +617,7 @@ static void perf_syscall_exit(void *ignore, struct pt_regs *regs, long ret)
 		return;
 
 	rec = (struct syscall_trace_exit *)perf_trace_buf_prepare(size,
-				sys_data->exit_event->event.type, regs, &rctx);
+				sys_data->exit_event->event.type, NULL, &rctx);
 	if (!rec)
 		return;
 
