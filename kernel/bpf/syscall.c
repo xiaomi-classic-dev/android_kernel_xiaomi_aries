@@ -788,6 +788,7 @@ out:
 	fdput(f);
 	return prog;
 }
+EXPORT_SYMBOL_GPL(bpf_prog_get);
 
 struct bpf_prog *bpf_prog_get(u32 ufd)
 {
