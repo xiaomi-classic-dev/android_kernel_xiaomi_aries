@@ -53,6 +53,7 @@ struct request_sock_ops {
  */
 struct request_sock {
 	struct request_sock		*dl_next; /* Must be first member! */
+	struct sock_common		__req_common;
 	u16				mss;
 	u8				retrans;
 	u8				cookie_ts; /* syncookie: encode tcpopts in timestamp */
@@ -71,8 +72,10 @@ static inline struct request_sock *reqsk_alloc(const struct request_sock_ops *op
 {
 	struct request_sock *req = kmem_cache_alloc(ops->slab, GFP_ATOMIC);
 
-	if (req != NULL)
+	if (req != NULL) {
 		req->rsk_ops = ops;
+		atomic64_set(&req->__req_common.skc_cookie, 0);
+	}
 
 	return req;
 }
