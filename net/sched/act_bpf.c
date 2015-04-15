@@ -40,6 +40,9 @@ static int tcf_bpf(struct sk_buff *skb, const struct tc_action *act,
 	int action, filter_res;
 	bool at_ingress = G_TC_AT(skb->tc_verd) & AT_INGRESS;
 
+	if (unlikely(!skb_mac_header_was_set(skb)))
+		return TC_ACT_UNSPEC;
+
 	spin_lock(&prog->tcf_lock);
 
 	prog->tcf_tm.lastuse = jiffies;
