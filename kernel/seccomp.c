@@ -388,16 +388,14 @@ static inline void seccomp_sync_threads(void)
  */
 static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 {
-	struct seccomp_filter *filter;
+	struct seccomp_filter *filter, *sfilter;
 	unsigned long total_insns = fprog->len;
-	struct bpf_prog *prog;
-	unsigned long fsize;
+	int ret;
 
 	if (fprog->len == 0 || fprog->len > BPF_MAXINSNS)
 		return ERR_PTR(-EINVAL);
 
 	BUG_ON(INT_MAX / fprog->len < sizeof(struct sock_filter));
-	fsize = bpf_classic_proglen(fprog);
 
 	for (filter = current->seccomp.filter; filter; filter = filter->prev)
 		total_insns += filter->prog->len + 4;
@@ -415,35 +413,20 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
 				     CAP_SYS_ADMIN) != 0)
 		return ERR_PTR(-EACCES);
 
-	prog = bpf_prog_alloc(bpf_prog_size(fprog->len), 0);
-	if (!prog)
+	sfilter = kzalloc(sizeof(*sfilter), GFP_KERNEL | __GFP_NOWARN);
+	if (!sfilter)
 		return ERR_PTR(-ENOMEM);
 
-	/* Copy the instructions from fprog. */
-	if (copy_from_user(prog->insns, fprog->filter, fsize)) {
-		__bpf_prog_free(prog);
-		return ERR_PTR(-EFAULT);
+	ret = bpf_prog_create_from_user(&sfilter->prog, fprog,
+				       seccomp_check_filter, false);
+	if (ret < 0) {
+		kfree(sfilter);
+		return ERR_PTR(ret);
 	}
 
-	prog->len = fprog->len;
+	atomic_set(&sfilter->usage, 1);
 
-	/* bpf_prepare_filter() already takes care of freeing
-	 * memory in case something goes wrong.
-	 */
-	prog = bpf_prepare_filter(prog, seccomp_check_filter);
-	if (IS_ERR(prog))
-		return ERR_CAST(prog);
-
-	filter = kzalloc(sizeof(*filter), GFP_KERNEL | __GFP_NOWARN);
-	if (!filter) {
-		bpf_prog_destroy(prog);
-		return ERR_PTR(-ENOMEM);
-	}
-
-	filter->prog = prog;
-	atomic_set(&filter->usage, 1);
-
-	return filter;
+	return sfilter;
 }
 
 /**
