@@ -314,6 +314,7 @@ EXPORT_SYMBOL(tcp_sockets_allocated);
  * TCP splice context
  */
 struct tcp_splice_state {
+	struct sock *sk;
 	struct pipe_inode_info *pipe;
 	size_t len;
 	unsigned int flags;
@@ -586,8 +587,9 @@ static int tcp_splice_data_recv(read_descriptor_t *rd_desc, struct sk_buff *skb,
 	struct tcp_splice_state *tss = rd_desc->arg.data;
 	int ret;
 
-	ret = skb_splice_bits(skb, offset, tss->pipe, min(rd_desc->count, len),
-			      tss->flags);
+	ret = skb_splice_bits(skb, tss->sk, offset, tss->pipe,
+			      min(rd_desc->count, len), tss->flags,
+			      skb_socket_splice);
 	if (ret > 0)
 		rd_desc->count -= ret;
 	return ret;
@@ -622,6 +624,7 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 {
 	struct sock *sk = sock->sk;
 	struct tcp_splice_state tss = {
+		.sk = sk,
 		.pipe = pipe,
 		.len = len,
 		.flags = flags,

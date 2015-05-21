@@ -112,6 +112,7 @@
 #include <linux/poll.h>
 #include <linux/rtnetlink.h>
 #include <linux/mount.h>
+#include <linux/splice.h>
 #include <net/checksum.h>
 #include <linux/security.h>
 
@@ -635,6 +636,9 @@ static int unix_stream_sendmsg(struct kiocb *, struct socket *,
 			       struct msghdr *, size_t);
 static int unix_stream_recvmsg(struct kiocb *, struct socket *,
 			       struct msghdr *, size_t, int);
+static ssize_t unix_stream_splice_read(struct socket *, loff_t *,
+				       struct pipe_inode_info *, size_t,
+				       unsigned int);
 static int unix_dgram_sendmsg(struct kiocb *, struct socket *,
 			      struct msghdr *, size_t);
 static int unix_dgram_recvmsg(struct kiocb *, struct socket *,
@@ -679,6 +683,7 @@ static const struct proto_ops unix_stream_ops = {
 	.recvmsg =	unix_stream_recvmsg,
 	.mmap =		sock_no_mmap,
 	.sendpage =	sock_no_sendpage,
+	.splice_read =	unix_stream_splice_read,
 	.set_peek_off =	unix_set_peek_off,
 };
 
@@ -2074,48 +2079,55 @@ static long unix_stream_data_wait(struct sock *sk, long timeo)
 
 
 
-static int unix_stream_recvmsg(struct kiocb *iocb, struct socket *sock,
-			       struct msghdr *msg, size_t size,
-			       int flags)
+struct unix_stream_read_state {
+	int (*recv_actor)(struct sk_buff *, int, int,
+			  struct unix_stream_read_state *);
+	struct socket *socket;
+	struct msghdr *msg;
+	struct scm_cookie *scm;
+	struct pipe_inode_info *pipe;
+	size_t size;
+	int flags;
+	unsigned int splice_flags;
+};
+
+static int unix_stream_read_generic(struct unix_stream_read_state *state)
 {
-	struct sock_iocb *siocb = kiocb_to_siocb(iocb);
-	struct scm_cookie tmp_scm;
+	struct scm_cookie local_scm;
+	struct scm_cookie *scm = state->scm;
+	struct socket *sock = state->socket;
 	struct sock *sk = sock->sk;
 	struct unix_sock *u = unix_sk(sk);
-	struct sockaddr_un *sunaddr = msg->msg_name;
+	struct sockaddr_un *sunaddr = state->msg ? state->msg->msg_name : NULL;
 	int copied = 0;
+	int flags = state->flags;
 	int noblock = flags & MSG_DONTWAIT;
 	int check_creds = 0;
 	int target;
 	int err = 0;
 	long timeo;
 	int skip;
+	size_t size = state->size;
+
+	if (!scm) {
+		memset(&local_scm, 0, sizeof(local_scm));
+		scm = &local_scm;
+	}
 
 	err = -EINVAL;
 	if (sk->sk_state != TCP_ESTABLISHED)
 		goto out;
 
 	err = -EOPNOTSUPP;
-	if (flags&MSG_OOB)
+	if (flags & MSG_OOB)
 		goto out;
 
-	target = sock_rcvlowat(sk, flags&MSG_WAITALL, size);
+	target = sock_rcvlowat(sk, flags & MSG_WAITALL, size);
 	timeo = sock_rcvtimeo(sk, noblock);
 
-	/* Lock the socket to prevent queue disordering
-	 * while sleeps in memcpy_tomsg
-	 */
-
-	if (!siocb->scm) {
-		siocb->scm = &tmp_scm;
-		memset(&tmp_scm, 0, sizeof(tmp_scm));
-	}
-
+	/* Prevent queue reordering while the actor consumes stream data. */
 	err = mutex_lock_interruptible(&u->readlock);
 	if (unlikely(err)) {
-		/* recvmsg() in non blocking mode is supposed to return -EAGAIN
-		 * sk_rcvtimeo is not honored by mutex_lock_interruptible()
-		 */
 		err = noblock ? -EAGAIN : -ERESTARTSYS;
 		goto out;
 	}
@@ -2138,10 +2150,6 @@ again:
 			if (copied >= target)
 				goto unlock;
 
-			/*
-			 *	POSIX 1003.1g mandates this order.
-			 */
-
 			err = sock_error(sk);
 			if (err)
 				goto unlock;
@@ -2156,14 +2164,14 @@ again:
 
 			timeo = unix_stream_data_wait(sk, timeo);
 
-			if (signal_pending(current)
-			    ||  mutex_lock_interruptible(&u->readlock)) {
+			if (signal_pending(current) ||
+			    mutex_lock_interruptible(&u->readlock)) {
 				err = sock_intr_errno(timeo);
 				goto out;
 			}
 
 			continue;
- unlock:
+unlock:
 			unix_state_unlock(sk);
 			break;
 		}
@@ -2177,39 +2185,35 @@ again:
 		unix_state_unlock(sk);
 
 		if (check_creds) {
-			/* Never glue messages from different writers */
-			if ((UNIXCB(skb).pid  != siocb->scm->pid) ||
-			    (UNIXCB(skb).cred != siocb->scm->cred))
+			/* Never glue messages from different writers. */
+			if ((UNIXCB(skb).pid != scm->pid) ||
+			    (UNIXCB(skb).cred != scm->cred))
 				break;
 		} else if (test_bit(SOCK_PASSCRED, &sock->flags)) {
-			/* Copy credentials */
-			scm_set_cred(siocb->scm, UNIXCB(skb).pid, UNIXCB(skb).cred);
+			scm_set_cred(scm, UNIXCB(skb).pid, UNIXCB(skb).cred);
 			check_creds = 1;
 		}
 
-		/* Copy address just once */
 		if (sunaddr) {
-			unix_copy_addr(msg, skb->sk);
+			unix_copy_addr(state->msg, skb->sk);
 			sunaddr = NULL;
 		}
 
 		chunk = min_t(unsigned int, skb->len - skip, size);
-		if (memcpy_toiovec(msg->msg_iov, skb->data + skip, chunk)) {
-			if (copied == 0)
-				copied = -EFAULT;
+		chunk = state->recv_actor(skb, skip, chunk, state);
+		if (chunk < 0) {
+			err = chunk;
 			break;
 		}
 		copied += chunk;
 		size -= chunk;
 
-		/* Mark read part of skb as used */
 		if (!(flags & MSG_PEEK)) {
 			skb_pull(skb, chunk);
-
 			sk_peek_offset_bwd(sk, chunk);
 
 			if (UNIXCB(skb).fp)
-				unix_detach_fds(siocb->scm, skb);
+				unix_detach_fds(scm, skb);
 
 			if (skb->len)
 				break;
@@ -2217,24 +2221,98 @@ again:
 			skb_unlink(skb, &sk->sk_receive_queue);
 			consume_skb(skb);
 
-			if (siocb->scm->fp)
+			if (scm->fp)
 				break;
 		} else {
-			/* It is questionable, see note in unix_dgram_recvmsg.
-			 */
 			if (UNIXCB(skb).fp)
-				siocb->scm->fp = scm_fp_dup(UNIXCB(skb).fp);
-
+				scm->fp = scm_fp_dup(UNIXCB(skb).fp);
 			sk_peek_offset_fwd(sk, chunk);
-
 			break;
 		}
 	} while (size);
 
 	mutex_unlock(&u->readlock);
-	scm_recv(sock, msg, siocb->scm, flags);
+	if (state->msg)
+		scm_recv(sock, state->msg, scm, flags);
+	else
+		scm_destroy(scm);
 out:
 	return copied ? : err;
+}
+
+static int unix_stream_read_actor(struct sk_buff *skb, int skip, int chunk,
+				  struct unix_stream_read_state *state)
+{
+	int ret;
+
+	ret = memcpy_toiovec(state->msg->msg_iov, skb->data + skip, chunk);
+	return ret ? ret : chunk;
+}
+
+static int unix_stream_recvmsg(struct kiocb *iocb, struct socket *sock,
+			       struct msghdr *msg, size_t size, int flags)
+{
+	struct sock_iocb *siocb = kiocb_to_siocb(iocb);
+	struct scm_cookie tmp_scm;
+	struct unix_stream_read_state state = {
+		.recv_actor = unix_stream_read_actor,
+		.socket = sock,
+		.msg = msg,
+		.size = size,
+		.flags = flags,
+	};
+
+	if (!siocb->scm) {
+		siocb->scm = &tmp_scm;
+		memset(&tmp_scm, 0, sizeof(tmp_scm));
+	}
+	state.scm = siocb->scm;
+
+	return unix_stream_read_generic(&state);
+}
+
+static ssize_t skb_unix_socket_splice(struct sock *sk,
+				      struct pipe_inode_info *pipe,
+				      struct splice_pipe_desc *spd)
+{
+	int ret;
+	struct unix_sock *u = unix_sk(sk);
+
+	mutex_unlock(&u->readlock);
+	ret = splice_to_pipe(pipe, spd);
+	mutex_lock(&u->readlock);
+
+	return ret;
+}
+
+static int unix_stream_splice_actor(struct sk_buff *skb, int skip, int chunk,
+				    struct unix_stream_read_state *state)
+{
+	return skb_splice_bits(skb, state->socket->sk, skip, state->pipe,
+			       chunk, state->splice_flags,
+			       skb_unix_socket_splice);
+}
+
+static ssize_t unix_stream_splice_read(struct socket *sock, loff_t *ppos,
+				       struct pipe_inode_info *pipe,
+				       size_t size, unsigned int flags)
+{
+	struct unix_stream_read_state state = {
+		.recv_actor = unix_stream_splice_actor,
+		.socket = sock,
+		.pipe = pipe,
+		.size = size,
+		.splice_flags = flags,
+	};
+
+	if (unlikely(*ppos))
+		return -ESPIPE;
+
+	if ((sock->file->f_flags & O_NONBLOCK) ||
+	    (flags & SPLICE_F_NONBLOCK))
+		state.flags = MSG_DONTWAIT;
+
+	return unix_stream_read_generic(&state);
 }
 
 static int unix_shutdown(struct socket *sock, int mode)
