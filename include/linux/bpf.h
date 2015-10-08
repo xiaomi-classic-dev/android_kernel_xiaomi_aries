@@ -350,6 +350,8 @@ static inline void bpf_long_memcpy(void *dst, const void *src, u32 size)
 		*ldst++ = *lsrc++;
 }
 
+extern int sysctl_unprivileged_bpf_disabled;
+
 /* verify correctness of eBPF program */
 int bpf_check(struct bpf_prog **fp, union bpf_attr *attr);
 
