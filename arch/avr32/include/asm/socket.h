@@ -80,4 +80,8 @@
 
 #define SO_REUSEPORT	15
 
+
+#define SO_ATTACH_REUSEPORT_CBPF	51
+#define SO_ATTACH_REUSEPORT_EBPF	52
+
 #endif /* __ASM_AVR32_SOCKET_H */

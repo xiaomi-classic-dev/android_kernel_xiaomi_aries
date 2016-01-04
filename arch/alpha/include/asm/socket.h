@@ -91,4 +91,8 @@
 
 #define SO_REUSEPORT	0x0200
 
+
+#define SO_ATTACH_REUSEPORT_CBPF	51
+#define SO_ATTACH_REUSEPORT_EBPF	52
+
 #endif /* _ASM_SOCKET_H */
