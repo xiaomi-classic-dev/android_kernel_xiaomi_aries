@@ -308,7 +308,9 @@ static int cls_bpf_prog_from_efd(struct nlattr **tb, struct cls_bpf_prog *prog,
 	prog->bpf_name = name;
 	prog->filter = fp;
 
-	if (fp->dst_needed)
+	if (fp->dst_needed &&
+	    (!(tp->q->flags & TCQ_F_INGRESS) ||
+	     TC_H_MIN(tp->classid) == TC_H_MIN(TC_H_MIN_EGRESS)))
 		netif_keep_dst(qdisc_dev(tp->q));
 
 	return 0;

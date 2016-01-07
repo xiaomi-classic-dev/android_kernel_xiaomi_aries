@@ -1193,6 +1193,11 @@ struct net_device {
 	void __rcu		*rx_handler_data;
 
 	struct netdev_queue __rcu *ingress_queue;
+#ifdef CONFIG_NET_CLS_ACT
+	struct tcf_proto __rcu	*ingress_cl_list;
+	struct tcf_proto __rcu	*egress_cl_list;
+#endif
+
 
 /*
  * Cache lines mostly used on transmit path

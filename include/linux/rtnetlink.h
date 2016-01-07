@@ -807,6 +807,11 @@ static inline struct netdev_queue *dev_ingress_queue(struct net_device *dev)
 
 extern struct netdev_queue *dev_ingress_queue_create(struct net_device *dev);
 
+#ifdef CONFIG_NET_EGRESS
+void net_inc_egress_queue(void);
+void net_dec_egress_queue(void);
+#endif
+
 extern void rtnetlink_init(void);
 extern void __rtnl_unlock(void);
 
