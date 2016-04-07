@@ -637,7 +637,7 @@ __attribute__((section("_ftrace_events"))) *__event_##call = &event_##call
  *	extern void perf_tp_event(int, u64, u64, void *, int);
  *	struct ftrace_raw_##call *entry;
  *	struct perf_trace_buf *trace_buf;
- *	u64 __addr = 0, __count = 1;
+ *	u64 __count = 1;
  *	unsigned long irq_flags;
  *	struct trace_entry *ent;
  *	int __entry_size;
@@ -728,7 +728,7 @@ perf_trace_##call(void *__data, proto)					\
 	struct ftrace_data_offsets_##call __maybe_unused __data_offsets;\
 	struct ftrace_raw_##call *entry;				\
 	struct pt_regs *__regs;						\
-	u64 __addr = 0, __count = 1;					\
+	u64 __count = 1;					\
 	struct hlist_head *head;					\
 	int __entry_size;						\
 	int __data_size;						\
@@ -740,8 +740,7 @@ perf_trace_##call(void *__data, proto)					\
 			     sizeof(u64));				\
 	__entry_size -= sizeof(u32);					\
 									\
-	entry = perf_trace_buf_prepare(__entry_size,			\
-			event_call->event.type, &__regs, &rctx);	\
+	entry = perf_trace_buf_alloc(__entry_size, &__regs, &rctx);	\
 	if (!entry)							\
 		return;							\
 									\
@@ -751,9 +750,9 @@ perf_trace_##call(void *__data, proto)					\
 									\
 	{ assign; }							\
 									\
-	head = this_cpu_ptr(event_call->perf_events);			\
-	perf_trace_buf_submit(entry, __entry_size, rctx, __addr,	\
-		__count, __regs, head);				\
+	perf_trace_buf_submit(entry, __entry_size, rctx,		\
+			      event_call->event.type, __count, __regs,	\
+			      head);				\
 }
 
 /*
