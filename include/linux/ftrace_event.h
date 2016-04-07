@@ -185,6 +185,7 @@ enum {
 	TRACE_EVENT_FL_IGNORE_ENABLE_BIT,
 	TRACE_EVENT_FL_KPROBE_BIT,
 	TRACE_EVENT_FL_UPROBE_BIT,
+	TRACE_EVENT_FL_TRACEPOINT_BIT,
 };
 
 enum {
@@ -197,6 +198,8 @@ enum {
 	TRACE_EVENT_FL_KPROBE		= (1 << TRACE_EVENT_FL_KPROBE_BIT),
 	TRACE_EVENT_FL_UPROBE           = (1 << TRACE_EVENT_FL_UPROBE_BIT),
 };
+
+enum { TRACE_EVENT_FL_TRACEPOINT = (1 << TRACE_EVENT_FL_TRACEPOINT_BIT) };
 
 #define TRACE_EVENT_FL_UKPROBE (TRACE_EVENT_FL_KPROBE | TRACE_EVENT_FL_UPROBE)
 
@@ -238,7 +241,7 @@ struct ftrace_event_call {
 #define __TRACE_EVENT_FLAGS(name, value)				\
 	static int __init trace_init_flags_##name(void)			\
 	{								\
-		event_##name.flags = value;				\
+		event_##name.flags |= value;				\
 		return 0;						\
 	}								\
 	early_initcall(trace_init_flags_##name);

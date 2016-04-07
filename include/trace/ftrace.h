@@ -604,6 +604,7 @@ static struct ftrace_event_call __used event_##call = {			\
 	.class			= &event_class_##template,		\
 	.event.funcs		= &ftrace_event_type_funcs_##template,	\
 	.print_fmt		= print_fmt_##template,			\
+	.flags			= TRACE_EVENT_FL_TRACEPOINT,		\
 };									\
 static struct ftrace_event_call __used					\
 __attribute__((section("_ftrace_events"))) *__event_##call = &event_##call
@@ -618,6 +619,7 @@ static struct ftrace_event_call __used event_##call = {			\
 	.class			= &event_class_##template,		\
 	.event.funcs		= &ftrace_event_type_funcs_##call,	\
 	.print_fmt		= print_fmt_##call,			\
+	.flags			= TRACE_EVENT_FL_TRACEPOINT,		\
 };									\
 static struct ftrace_event_call __used					\
 __attribute__((section("_ftrace_events"))) *__event_##call = &event_##call
@@ -727,6 +729,7 @@ perf_trace_##call(void *__data, proto)					\
 	struct ftrace_event_call *event_call = __data;			\
 	struct ftrace_data_offsets_##call __maybe_unused __data_offsets;\
 	struct ftrace_raw_##call *entry;				\
+	struct bpf_prog *prog = event_call->prog;			\
 	struct pt_regs *__regs;						\
 	u64 __count = 1;					\
 	struct hlist_head *head;					\
@@ -736,6 +739,8 @@ perf_trace_##call(void *__data, proto)					\
 									\
 									\
 	__data_size = ftrace_get_offsets_##call(&__data_offsets, args); \
+									\
+	head = this_cpu_ptr(event_call->perf_events);			\
 	__entry_size = ALIGN(__data_size + sizeof(*entry) + sizeof(u32),\
 			     sizeof(u64));				\
 	__entry_size -= sizeof(u32);					\
@@ -745,10 +750,18 @@ perf_trace_##call(void *__data, proto)					\
 		return;							\
 									\
 	perf_fetch_caller_regs(__regs);					\
-									\
+                                                                        \
 	tstruct								\
 									\
 	{ assign; }							\
+									\
+	if (prog) {							\
+		*(struct pt_regs **)entry = __regs;			\
+		if (!trace_call_bpf(prog, entry) || hlist_empty(head)) { \
+			perf_swevent_put_recursion_context(rctx);	\
+			return;						\
+		}							\
+	}                                                               \
 									\
 	perf_trace_buf_submit(entry, __entry_size, rctx,		\
 			      event_call->event.type, __count, __regs,	\
