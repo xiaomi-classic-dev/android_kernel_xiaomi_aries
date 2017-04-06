@@ -87,4 +87,6 @@
 
 #define SO_LOCK_FILTER		44
 
+#define SO_COOKIE              57
+
 #endif /* _ASM_SOCKET_H */
