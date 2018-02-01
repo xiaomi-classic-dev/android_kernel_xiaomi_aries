@@ -47,6 +47,7 @@
  *  Overall revision about smaps.
  */
 
+#include <linux/cpufreq_times.h>
 #include <asm/uaccess.h>
 
 #include <linux/errno.h>
@@ -2566,6 +2567,9 @@ static const struct file_operations proc_task_operations;
 static const struct inode_operations proc_task_inode_operations;
 
 static const struct pid_entry tgid_base_stuff[] = {
+#ifdef CONFIG_CPU_FREQ_TIMES
+	ONE("time_in_state", 0444, proc_time_in_state_show),
+#endif
 	DIR("task",       S_IRUGO|S_IXUGO, proc_task_inode_operations, proc_task_operations),
 	DIR("fd",         S_IRUSR|S_IXUSR, proc_fd_inode_operations, proc_fd_operations),
 #ifdef CONFIG_CHECKPOINT_RESTORE
@@ -2936,6 +2940,9 @@ out_no_task:
  * Tasks
  */
 static const struct pid_entry tid_base_stuff[] = {
+#ifdef CONFIG_CPU_FREQ_TIMES
+	ONE("time_in_state", 0444, proc_time_in_state_show),
+#endif
 	DIR("fd",        S_IRUSR|S_IXUSR, proc_fd_inode_operations, proc_fd_operations),
 	DIR("fdinfo",    S_IRUSR|S_IXUSR, proc_fdinfo_inode_operations, proc_fdinfo_operations),
 	DIR("ns",	 S_IRUSR|S_IXUGO, proc_ns_dir_inode_operations, proc_ns_dir_operations),

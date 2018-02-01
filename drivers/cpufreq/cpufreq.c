@@ -22,6 +22,7 @@
 #include <linux/init.h>
 #include <linux/notifier.h>
 #include <linux/cpufreq.h>
+#include <linux/cpufreq_times.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
@@ -335,6 +336,7 @@ void cpufreq_notify_transition(struct cpufreq_freqs *freqs, unsigned int state)
 		break;
 
 	case CPUFREQ_POSTCHANGE:
+		cpufreq_times_record_transition(freqs);
 		adjust_jiffies(CPUFREQ_POSTCHANGE, freqs);
 		pr_debug("FREQ: %lu - CPU: %lu", (unsigned long)freqs->new,
 			(unsigned long)freqs->cpu);
@@ -1166,6 +1168,7 @@ static int cpufreq_add_dev(struct device *dev, struct subsys_interface *sif)
 		pr_debug("initialization failed\n");
 		goto err_unlock_policy;
 	}
+	cpufreq_times_create_policy(policy);
 	policy->user_policy.min = policy->min;
 	policy->user_policy.max = policy->max;
 

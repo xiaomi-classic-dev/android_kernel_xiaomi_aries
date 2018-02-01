@@ -26,6 +26,7 @@
  *              Thomas Gleixner, Mike Kravetz
  */
 
+#include <linux/cpufreq_times.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/nmi.h>
@@ -2903,6 +2904,8 @@ void account_user_time(struct task_struct *p, cputime_t cputime,
 
 	/* Account for user time used */
 	acct_update_integrals(p);
+	/* ARM cputime is ticks; the upstream residency counters use ns. */
+	cpufreq_acct_update_power(p, (u64)cputime_to_usecs(cputime) * 1000);
 }
 
 /*
@@ -2953,6 +2956,8 @@ void __account_system_time(struct task_struct *p, cputime_t cputime,
 
 	/* Account for system time used */
 	acct_update_integrals(p);
+	/* ARM cputime is ticks; the upstream residency counters use ns. */
+	cpufreq_acct_update_power(p, (u64)cputime_to_usecs(cputime) * 1000);
 }
 
 /*

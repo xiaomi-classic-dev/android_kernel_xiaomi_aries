@@ -20,6 +20,12 @@ if CPU_FREQ
 config CPU_FREQ_TABLE
 	tristate
 
+config CPU_FREQ_TIMES
+	bool "CPU frequency residency for each task"
+	depends on CPU_FREQ
+	help
+	  Account task CPU execution at each frequency and expose proc time_in_state.
+
 config CPU_FREQ_STAT
 	tristate "CPU frequency translation statistics"
 	select CPU_FREQ_TABLE
