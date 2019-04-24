@@ -2005,6 +2005,7 @@ static void binder_transaction(struct binder_proc *proc,
 
 	if (target_node && target_node->txn_security_ctx) {
 		u32 secid;
+		size_t added_size;
 
 		security_task_getsecid(proc->tsk, &secid);
 		ret = security_secid_to_secctx(secid, &secctx, &secctx_sz);
@@ -2012,7 +2013,13 @@ static void binder_transaction(struct binder_proc *proc,
 			return_error = BR_FAILED_REPLY;
 			goto err_get_secctx_failed;
 		}
-		extra_buffers_size += ALIGN(secctx_sz, sizeof(u64));
+		added_size = ALIGN(secctx_sz, sizeof(u64));
+		extra_buffers_size += added_size;
+		if (extra_buffers_size < added_size) {
+			/* integer overflow of extra_buffers_size */
+			return_error = BR_FAILED_REPLY;
+			goto err_bad_extra_size;
+		}
 	}
 
 	trace_binder_transaction(reply, t, target_node);
@@ -2249,6 +2256,7 @@ err_copy_data_failed:
 	t->buffer->transaction = NULL;
 	binder_free_buf(target_proc, t->buffer);
 err_binder_alloc_buf_failed:
+err_bad_extra_size:
 	if (secctx)
 		security_release_secctx(secctx, secctx_sz);
 err_get_secctx_failed:
@@ -3180,8 +3188,7 @@ static int binder_ioctl_set_ctx_mgr(struct file *filp,
 	struct binder_node *new_node;
 
 	if (context->binder_context_mgr_node) {
-		binder_debug(BINDER_DEBUG_TOP_ERRORS,
-			     "binder: BINDER_SET_CONTEXT_MGR already set\n");
+		pr_err("BINDER_SET_CONTEXT_MGR already set\n");
 		ret = -EBUSY;
 		goto out;
 	}
@@ -3191,13 +3198,10 @@ static int binder_ioctl_set_ctx_mgr(struct file *filp,
 	if (uid_valid(context->binder_context_mgr_uid)) {
 		if (!uid_eq(context->binder_context_mgr_uid,
 			    current->cred->euid)) {
-			binder_debug(BINDER_DEBUG_TOP_ERRORS,
-				     "binder: BINDER_SET_"
-				     "CONTEXT_MGR bad uid %d != %d\n",
-				     from_kuid(&init_user_ns,
-					       current->cred->euid),
-				     from_kuid(&init_user_ns,
-					       context->binder_context_mgr_uid));
+			pr_err("BINDER_SET_CONTEXT_MGR bad uid %d != %d\n",
+			       from_kuid(&init_user_ns, current->cred->euid),
+			       from_kuid(&init_user_ns,
+					 context->binder_context_mgr_uid));
 			ret = -EPERM;
 			goto out;
 		}
