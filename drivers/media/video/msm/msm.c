@@ -1939,10 +1939,11 @@ static int msm_open(struct file *f)
 	D("%s use_count %d\n", __func__, pcam->use_count);
 	if (pcam->use_count == 1) {
 		int ges_evt = MSM_V4L2_GES_CAM_OPEN;
-		struct msm_cam_server_queue *queue;
 		server_q_idx = msm_find_free_queue();
-		if (server_q_idx < 0)
-			return server_q_idx;
+		if (server_q_idx < 0) {
+			rc = server_q_idx;
+			goto msm_cam_server_open_session_failed;
+		}
 		pcam->server_queue_idx = server_q_idx;
 		queue = &g_server_dev.server_queue[server_q_idx];
 		queue->ctrl_data = kzalloc(sizeof(uint8_t) *
