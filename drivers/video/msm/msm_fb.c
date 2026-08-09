@@ -1958,6 +1958,12 @@ static int msm_fb_release_all(struct fb_info *info, boolean is_all)
 			if (info->node == 0) {
 				down(&mfd->sem);
 				bl_level = mfd->bl_level;
+				/* Preserve a brightness request queued while the panel
+				 * was off. The first completed display commit will apply
+				 * it through the delayed backlight worker.
+				 */
+				if (!bl_level && unset_bl_level)
+					bl_level = unset_bl_level;
 				msm_fb_set_backlight(mfd, 0);
 				unset_bl_level = bl_level;
 				up(&mfd->sem);
@@ -3955,6 +3961,12 @@ static int msmfb_display_commit(struct fb_info *info,
 	static int blon = 3;
 
 	if (blon) {
+		/* Keep the vendor's startup frame suppression, but complete the
+		 * synchronization bookkeeping for every discarded frame. Otherwise
+		 * later frames can wait on an MDP release fence that never signals.
+		 */
+		msm_fb_wait_for_fence((struct msm_fb_data_type *)info->par);
+		msm_fb_release_timeline((struct msm_fb_data_type *)info->par);
 		blon -= 1;
 		return 0;
 	}
