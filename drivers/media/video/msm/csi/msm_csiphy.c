@@ -222,6 +222,11 @@ static int msm_csiphy_release(struct v4l2_subdev *sd)
 	struct csiphy_device *csiphy_dev;
 	int i;
 	csiphy_dev = v4l2_get_subdevdata(sd);
+	if (!csiphy_dev || !csiphy_dev->base) {
+		pr_err("%s: csiphy already released\n", __func__);
+		return 0;
+	}
+
 	for (i = 0; i < 4; i++)
 		msm_camera_io_w(0x0, csiphy_dev->base +
 		MIPI_CSIPHY_LNn_CFG2_ADDR + 0x40*i);

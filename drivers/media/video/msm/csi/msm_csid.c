@@ -237,6 +237,10 @@ static int msm_csid_release(struct v4l2_subdev *sd)
 	uint32_t irq;
 	struct csid_device *csid_dev;
 	csid_dev = v4l2_get_subdevdata(sd);
+	if (!csid_dev || !csid_dev->base) {
+		pr_err("%s: csid already released\n", __func__);
+		return 0;
+	}
 
 	irq = msm_camera_io_r(csid_dev->base + CSID_IRQ_STATUS_ADDR);
 	msm_camera_io_w(irq, csid_dev->base + CSID_IRQ_CLEAR_CMD_ADDR);

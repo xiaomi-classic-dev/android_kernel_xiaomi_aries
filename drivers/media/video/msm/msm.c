@@ -1192,10 +1192,21 @@ static int msm_camera_v4l2_streamon(struct file *f, void *pctx,
 	/* if HW streaming on is successful, start buffer streaming */
 	rc = vb2_streamon(&pcam_inst->vid_bufq, buf_type);
 	D("%s, videobuf_streamon returns %d\n", __func__, rc);
+	if (rc < 0) {
+		pr_err("%s: vb2_streamon failed %d\n", __func__, rc);
+		mutex_unlock(&pcam_inst->inst_lock);
+		mutex_unlock(&pcam->vid_lock);
+		return rc;
+	}
 
 	/* turn HW (VFE/sensor) streaming */
 	pcam_inst->streamon = 1;
 	rc = msm_server_streamon(pcam, pcam_inst->my_index);
+	if (rc < 0) {
+		pr_err("%s: hw failed to start streaming %d\n", __func__, rc);
+		pcam_inst->streamon = 0;
+		vb2_streamoff(&pcam_inst->vid_bufq, buf_type);
+	}
 	mutex_unlock(&pcam_inst->inst_lock);
 	mutex_unlock(&pcam->vid_lock);
 	D("%s rc = %d\n", __func__, rc);
@@ -1222,9 +1233,14 @@ static int msm_camera_v4l2_streamoff(struct file *f, void *pctx,
 	}
 
 	/* first turn of HW (VFE/sensor) streaming so that buffers are
-		not in use when we free the buffers */
+	not in use when we free the buffers */
 	mutex_lock(&pcam->vid_lock);
 	mutex_lock(&pcam_inst->inst_lock);
+	if (!pcam_inst->streamon) {
+		mutex_unlock(&pcam_inst->inst_lock);
+		mutex_unlock(&pcam->vid_lock);
+		return 0;
+	}
 	pcam_inst->streamon = 0;
 	if (g_server_dev.use_count > 0)
 		rc = msm_server_streamoff(pcam, pcam_inst->my_index);
@@ -2004,7 +2020,7 @@ static int msm_open(struct file *f)
 
 	if (pcam->use_count == 1) {
 		rc = msm_send_open_server(pcam);
-		if (rc < 0 && rc != -ERESTARTSYS) {
+		if (rc < 0) {
 			pr_err("%s: msm_send_open_server failed %d\n",
 				__func__, rc);
 			goto msm_send_open_server_failed;
@@ -2059,9 +2075,14 @@ int msm_cam_server_close_mctl_session(struct msm_cam_v4l2_device *pcam)
 	int rc = 0;
 	struct msm_cam_media_controller *pmctl = NULL;
 
+	if (!pcam)
+		return -EINVAL;
+
+	mutex_lock(&pcam->vid_lock);
 	pmctl = msm_camera_get_mctl(pcam->mctl_handle);
 	if (!pmctl) {
 		D("%s: invalid handle\n", __func__);
+		mutex_unlock(&pcam->vid_lock);
 		return -ENODEV;
 	}
 
@@ -2079,6 +2100,7 @@ int msm_cam_server_close_mctl_session(struct msm_cam_v4l2_device *pcam)
 	if (rc < 0)
 		pr_err("msm_cam_server_close_session fails %d\n", rc);
 
+	mutex_unlock(&pcam->vid_lock);
 	return rc;
 }
 
@@ -2559,28 +2581,38 @@ static unsigned int msm_poll_config(struct file *fp,
 static int msm_close_server(struct file *fp)
 {
 	struct v4l2_event_subscription sub;
+	struct msm_cam_v4l2_device *pcam;
+
 	D("%s\n", __func__);
 	mutex_lock(&g_server_dev.server_lock);
-	if (g_server_dev.use_count > 0)
-		g_server_dev.use_count--;
-	mutex_unlock(&g_server_dev.server_lock);
 	if (g_server_dev.use_count == 0) {
-		mutex_lock(&g_server_dev.server_lock);
-		if (g_server_dev.pcam_active) {
+		mutex_unlock(&g_server_dev.server_lock);
+		return 0;
+	}
+
+	g_server_dev.use_count--;
+	if (g_server_dev.use_count == 0) {
+		pcam = g_server_dev.pcam_active;
+		if (pcam) {
 			struct v4l2_event v4l2_ev;
-			msm_cam_stop_hardware(g_server_dev.pcam_active);
-			v4l2_ev.type = V4L2_EVENT_PRIVATE_START
-				+ MSM_CAM_APP_NOTIFY_ERROR_EVENT;
-			v4l2_ev.id = 0;
-			ktime_get_ts(&v4l2_ev.timestamp);
-			v4l2_event_queue(
-				g_server_dev.pcam_active->pvdev, &v4l2_ev);
+
+			mutex_lock(&pcam->vid_lock);
+			if (g_server_dev.pcam_active == pcam) {
+				msm_cam_stop_hardware(pcam);
+				v4l2_ev.type = V4L2_EVENT_PRIVATE_START
+					+ MSM_CAM_APP_NOTIFY_ERROR_EVENT;
+				v4l2_ev.id = 0;
+				ktime_get_ts(&v4l2_ev.timestamp);
+				if (pcam->pvdev)
+					v4l2_event_queue(pcam->pvdev, &v4l2_ev);
+			}
+			mutex_unlock(&pcam->vid_lock);
 		}
 		sub.type = V4L2_EVENT_ALL;
 		msm_server_v4l2_unsubscribe_event(
 			&g_server_dev.server_command_queue.eventHandle, &sub);
-		mutex_unlock(&g_server_dev.server_lock);
 	}
+	mutex_unlock(&g_server_dev.server_lock);
 	return 0;
 }
 
