@@ -1004,23 +1004,25 @@ static int msm_mctl_dev_close(struct file *f)
 		return -EINVAL;
 	}
 
-	pmctl = msm_camera_get_mctl(pcam->mctl_handle);
 	mutex_lock(&pcam->mctl_node.dev_lock);
+	pmctl = msm_camera_get_mctl(pcam->mctl_handle);
 	D("%s : active %d ", __func__, pcam->mctl_node.active);
-	if (pcam->mctl_node.active == 1) {
-		rc = msm_cam_server_close_mctl_session(pcam);
-		if (rc < 0) {
-			pr_err("%s: mctl session close failed %d",
-				__func__, rc);
-			mutex_unlock(&pcam->mctl_node.dev_lock);
-			return rc;
-		}
-		pmctl = NULL;
-	}
 	pcam_inst->streamon = 0;
 	pcam->mctl_node.dev_inst_map[pcam_inst->image_mode] = NULL;
-	if (pcam_inst->vbqueue_initialized)
+	/*
+	 * vb2 buffer cleanup needs the media controller's ION client.  Keep
+	 * the mctl session alive until all of the buffers have been released.
+	 */
+	if (pcam_inst->vbqueue_initialized) {
 		vb2_queue_release(&pcam_inst->vid_bufq);
+		pcam_inst->vbqueue_initialized = 0;
+	}
+	if (pcam->mctl_node.active == 1) {
+		rc = msm_cam_server_close_mctl_session(pcam);
+		if (rc < 0)
+			pr_err("%s: mctl session close failed %d",
+				__func__, rc);
+	}
 	D("%s Closing down instance %p ", __func__, pcam_inst);
 	pcam->mctl_node.dev_inst[pcam_inst->my_index] = NULL;
 	v4l2_fh_del(&pcam_inst->eventHandle);
