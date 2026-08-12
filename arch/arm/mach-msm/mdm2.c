@@ -104,7 +104,20 @@ static void mdm_power_down_common(struct mdm_modem_drv *mdm_drv)
 	int soft_reset_direction =
 		mdm_drv->pdata->soft_reset_inverted ? 1 : 0;
 
-	mdm_peripheral_disconnect(mdm_drv);
+	/*
+	 * Removing the HSIC platform device also synchronously unregisters
+	 * every USB network child.  During a system shutdown that can wait on
+	 * userspace-held netdev references indefinitely.  The HSIC shutdown
+	 * callback has already stopped the host controller, so only perform the
+	 * full disconnect for runtime modem shutdown/SSR.
+	 */
+	if (system_state == SYSTEM_RESTART ||
+	    system_state == SYSTEM_POWER_OFF ||
+	    system_state == SYSTEM_HALT)
+		pr_info("%s: skipping HSIC disconnect during system shutdown\n",
+			__func__);
+	else
+		mdm_peripheral_disconnect(mdm_drv);
 
 	gpio_direction_output(mdm_drv->ap2mdm_soft_reset_gpio,
 				soft_reset_direction);
@@ -292,5 +305,4 @@ int mdm_get_ops(struct mdm_ops **mdm_ops)
 	*mdm_ops = &mdm_cb;
 	return 0;
 }
-
 
