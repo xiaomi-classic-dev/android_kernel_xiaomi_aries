@@ -2,7 +2,7 @@
 # Kernel configuration targets
 # These targets are used from top-level makefile
 
-PHONY += oldconfig xconfig gconfig menuconfig config silentoldconfig update-po-config \
+PHONY += oldconfig olddefconfig xconfig gconfig menuconfig config silentoldconfig update-po-config \
 	localmodconfig localyesconfig
 
 ifdef KBUILD_KCONFIG
@@ -28,6 +28,12 @@ nconfig: $(obj)/nconf
 
 oldconfig: $(obj)/conf
 	$< --$@ $(Kconfig)
+
+# olddefconfig was added after this kernel release. Preserve the current
+# configuration as a fragment and select defaults for newly introduced
+# symbols, matching the interface expected by current Android build rules.
+olddefconfig: $(obj)/conf
+	KCONFIG_ALLCONFIG=.config $< --alldefconfig $(Kconfig)
 
 silentoldconfig: $(obj)/conf
 	$(Q)mkdir -p include/generated
@@ -305,4 +311,3 @@ $(obj)/%.moc: $(src)/%.h
 $(obj)/gconf.glade.h: $(obj)/gconf.glade
 	$(Q)intltool-extract --type=gettext/glade --srcdir=$(srctree) \
 	$(obj)/gconf.glade
-
