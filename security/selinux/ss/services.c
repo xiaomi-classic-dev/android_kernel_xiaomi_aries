@@ -633,6 +633,9 @@ void services_compute_xperms_drivers(
 		/* if allowing permissions within a driver */
 		security_xperm_set(xperms->drivers.p,
 					node->datum.u.xperms->driver);
+	} else {
+		/* Old kernels use the legacy netlink permission mappings. */
+		return;
 	}
 
 	/* If no ioctl commands are allowed, ignore auditallow and auditdeny */
@@ -951,7 +954,8 @@ void services_compute_xperms_decision(struct extended_perms_decision *xpermd,
 					xpermd->driver))
 			return;
 	} else {
-		BUG();
+		/* Ignore non-ioctl xperms on kernels without their LSM hooks. */
+		return;
 	}
 
 	if (node->key.specified == AVTAB_XPERMS_ALLOWED) {

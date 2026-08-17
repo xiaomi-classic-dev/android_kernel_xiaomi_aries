@@ -513,10 +513,11 @@ int avtab_read_item(struct avtab *a, void *fp, struct policydb *pol,
 			printk(KERN_ERR "SELinux: avtab: truncated entry\n");
 			return rc;
 		}
-		if (avtab_android_m_compat ||
+		if ((xperms.specified != AVTAB_XPERMS_NLMSG) &&
+			    (avtab_android_m_compat ||
 			    ((xperms.specified != AVTAB_XPERMS_IOCTLFUNCTION) &&
 			    (xperms.specified != AVTAB_XPERMS_IOCTLDRIVER) &&
-			    (vers == POLICYDB_VERSION_XPERMS_IOCTL))) {
+			    (vers == POLICYDB_VERSION_XPERMS_IOCTL)))) {
 			xperms.driver = xperms.specified;
 			if (android_m_compat_optype)
 				xperms.specified = AVTAB_XPERMS_IOCTLDRIVER;
