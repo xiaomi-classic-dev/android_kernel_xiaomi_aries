@@ -3952,8 +3952,9 @@ int vfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 }
 EXPORT_SYMBOL(vfs_rename);
 
-SYSCALL_DEFINE4(renameat, int, olddfd, const char __user *, oldname,
-		int, newdfd, const char __user *, newname)
+static int do_renameat(int olddfd, const char __user *oldname,
+		       int newdfd, const char __user *newname,
+		       unsigned int flags)
 {
 	struct dentry *old_dir, *new_dir;
 	struct dentry *old_dentry, *new_dentry;
@@ -3963,6 +3964,8 @@ SYSCALL_DEFINE4(renameat, int, olddfd, const char __user *, oldname,
 	struct filename *to;
 	int error;
 
+	if (flags & ~RENAME_NOREPLACE)
+		return -EINVAL;
 	from = user_path_parent(olddfd, oldname, &oldnd);
 	if (IS_ERR(from)) {
 		error = PTR_ERR(from);
@@ -4026,6 +4029,10 @@ SYSCALL_DEFINE4(renameat, int, olddfd, const char __user *, oldname,
 	error = -ENOTEMPTY;
 	if (new_dentry == trap)
 		goto exit5;
+	if ((flags & RENAME_NOREPLACE) && new_dentry->d_inode) {
+		error = -EEXIST;
+		goto exit5;
+	}
 
 	error = security_path_rename(&oldnd.path, old_dentry,
 				     &newnd.path, new_dentry);
@@ -4050,22 +4057,16 @@ exit:
 	return error;
 }
 
-/*
- * Android 14 implements rename() and renameat() through renameat2().  The
- * syscall was added after Linux 3.4, but flags == 0 has exactly the legacy
- * renameat() semantics and can safely use the existing implementation.
- *
- * Keep unsupported renameat2 flags explicit instead of silently ignoring
- * them.  This matches the conservative renameat2 backports used by other
- * Android 3.4 kernels while avoiding invasive VFS and filesystem changes.
- */
+SYSCALL_DEFINE4(renameat, int, olddfd, const char __user *, oldname,
+		int, newdfd, const char __user *, newname)
+{
+	return do_renameat(olddfd, oldname, newdfd, newname, 0);
+}
+
 SYSCALL_DEFINE5(renameat2, int, olddfd, const char __user *, oldname,
 		int, newdfd, const char __user *, newname, unsigned int, flags)
 {
-	if (flags)
-		return -EINVAL;
-
-	return sys_renameat(olddfd, oldname, newdfd, newname);
+	return do_renameat(olddfd, oldname, newdfd, newname, flags);
 }
 
 SYSCALL_DEFINE2(rename, const char __user *, oldname, const char __user *, newname)
