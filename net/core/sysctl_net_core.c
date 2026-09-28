@@ -112,7 +112,7 @@ static int proc_dointvec_minmax_bpf_enable(struct ctl_table *table, int write,
 	return ret;
 }
 
-# if defined(CONFIG_HAVE_EBPF_JIT) || defined(CONFIG_ARM64)
+# if defined(CONFIG_HAVE_EBPF_JIT) || defined(CONFIG_ARM) || defined(CONFIG_ARM64)
 static int
 proc_dointvec_minmax_bpf_restricted(struct ctl_table *table, int write,
 				    void __user *buffer, size_t *lenp,
@@ -210,6 +210,9 @@ static struct ctl_table net_core_table[] = {
 		.extra1		= &zero,
 		.extra2		= &two,
 	},
+# endif
+/* The legacy ARM eBPF backends predate HAVE_EBPF_JIT in Kconfig. */
+# if defined(CONFIG_HAVE_EBPF_JIT) || defined(CONFIG_ARM) || defined(CONFIG_ARM64)
 	{
 		.procname	= "bpf_jit_kallsyms",
 		.data		= &bpf_jit_kallsyms,
