@@ -1918,6 +1918,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 	set_memory_ro((unsigned long)header, header->pages);
 	prog->bpf_func = (void *)ctx.target;
 	prog->jited = 1;
+	prog->jited_len = image_size;
 
 out_imms:
 #if __LINUX_ARM_ARCH__ < 7
