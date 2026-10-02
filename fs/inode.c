@@ -182,6 +182,9 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 		mapping->backing_dev_info = bdi;
 	}
 	inode->i_private = NULL;
+#ifdef CONFIG_FS_VERITY
+	inode->i_verity_info = NULL;
+#endif
 	inode->i_mapping = mapping;
 	INIT_LIST_HEAD(&inode->i_dentry);	/* buggered by rcu freeing */
 #ifdef CONFIG_FS_POSIX_ACL

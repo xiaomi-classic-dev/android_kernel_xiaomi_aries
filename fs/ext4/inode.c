@@ -122,6 +122,7 @@ void ext4_evict_inode(struct inode *inode)
 	int err;
 
 	trace_ext4_evict_inode(inode);
+	fsverity_cleanup_inode(inode);
 
 	ext4_ioend_wait(inode);
 
@@ -2723,6 +2724,11 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
 static int ext4_readpage(struct file *file, struct page *page)
 {
 	trace_ext4_readpage(page);
+#ifdef CONFIG_FS_VERITY
+	if (IS_VERITY(page->mapping->host) ||
+	    ext4_verity_in_progress(page->mapping->host))
+		return ext4_verity_readpage(NULL, page);
+#endif
 	return mpage_readpage(page, ext4_get_block);
 }
 
@@ -2730,6 +2736,10 @@ static int
 ext4_readpages(struct file *file, struct address_space *mapping,
 		struct list_head *pages, unsigned nr_pages)
 {
+#ifdef CONFIG_FS_VERITY
+	if (IS_VERITY(mapping->host) || ext4_verity_in_progress(mapping->host))
+		return read_cache_pages(mapping, pages, ext4_verity_readpage, NULL);
+#endif
 	return mpage_readpages(mapping, pages, nr_pages, ext4_get_block);
 }
 
@@ -3049,7 +3059,7 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
 	/*
 	 * If we are doing data journalling we don't support O_DIRECT
 	 */
-	if (ext4_should_journal_data(inode))
+	if (ext4_should_journal_data(inode) || IS_VERITY(inode))
 		return 0;
 
 	trace_ext4_direct_IO_enter(inode, offset, iov_length(iov, nr_segs), rw);
@@ -3622,8 +3632,10 @@ void ext4_set_inode_flags(struct inode *inode)
 		new_fl |= S_NOATIME;
 	if (flags & EXT4_DIRSYNC_FL)
 		new_fl |= S_DIRSYNC;
+	if (flags & EXT4_VERITY_FL)
+		new_fl |= S_VERITY;
 	set_mask_bits(&inode->i_flags,
-		      S_SYNC|S_APPEND|S_IMMUTABLE|S_NOATIME|S_DIRSYNC, new_fl);
+		      S_SYNC|S_APPEND|S_IMMUTABLE|S_NOATIME|S_DIRSYNC|S_VERITY, new_fl);
 }
 
 /* Propagate flags from i_flags to EXT4_I(inode)->i_flags */
@@ -4142,6 +4154,9 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 	int orphan = 0;
 	const unsigned int ia_valid = attr->ia_valid;
 
+	error = fsverity_prepare_setattr(dentry, attr);
+	if (error)
+		return error;
 	error = inode_change_ok(inode, attr);
 	if (error)
 		return error;

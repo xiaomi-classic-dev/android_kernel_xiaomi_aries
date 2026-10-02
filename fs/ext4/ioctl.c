@@ -29,7 +29,17 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	ext4_debug("cmd = %u, arg = %lu\n", cmd, arg);
 
+	/* No ioctl may rewrite a protected file's extent mapping. */
+	if ((IS_VERITY(inode) || ext4_verity_in_progress(inode)) &&
+	    (cmd == EXT4_IOC_MOVE_EXT ||
+	     cmd == EXT4_IOC_MIGRATE || cmd == EXT4_IOC_SETFLAGS))
+		return -EPERM;
+
 	switch (cmd) {
+	case FS_IOC_ENABLE_VERITY:
+		return fsverity_ioctl_enable(filp, (const void __user *)arg);
+	case FS_IOC_MEASURE_VERITY:
+		return fsverity_ioctl_measure(filp, (void __user *)arg);
 	case EXT4_IOC_GETFLAGS:
 		ext4_get_inode_flags(ei);
 		flags = ei->i_flags & EXT4_FL_USER_VISIBLE;
@@ -500,6 +510,8 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		set_fs(old_fs);
 		return err;
 	}
+	case FS_IOC_ENABLE_VERITY:
+	case FS_IOC_MEASURE_VERITY:
 	case EXT4_IOC_MOVE_EXT:
 	case FITRIM:
 	case EXT4_IOC_RESIZE_FS:

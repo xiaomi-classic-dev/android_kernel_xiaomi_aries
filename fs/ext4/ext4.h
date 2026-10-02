@@ -17,6 +17,7 @@
 #define _EXT4_H
 
 #include <linux/types.h>
+#include <linux/fsverity.h>
 #include <linux/blkdev.h>
 #include <linux/magic.h>
 #include <linux/jbd2.h>
@@ -383,7 +384,8 @@ struct flex_groups {
 #define EXT4_EOFBLOCKS_FL		0x00400000 /* Blocks allocated beyond EOF */
 #define EXT4_RESERVED_FL		0x80000000 /* reserved for ext4 lib */
 
-#define EXT4_FL_USER_VISIBLE		0x004BDFFF /* User visible flags */
+#define EXT4_VERITY_FL			0x00100000 /* Verity protected inode */
+#define EXT4_FL_USER_VISIBLE		0x005BDFFF /* User visible flags */
 #define EXT4_FL_USER_MODIFIABLE		0x004B80FF /* User modifiable flags */
 
 /* Flags that should be inherited by new inodes from their parent. */
@@ -434,6 +436,7 @@ enum {
 	EXT4_INODE_DIRSYNC	= 16,	/* dirsync behaviour (directories only) */
 	EXT4_INODE_TOPDIR	= 17,	/* Top of directory hierarchies*/
 	EXT4_INODE_HUGE_FILE	= 18,	/* Set to each huge file */
+	EXT4_INODE_VERITY	= 20,	/* Verity protected inode */
 	EXT4_INODE_EXTENTS	= 19,	/* Inode uses extents */
 	EXT4_INODE_EA_INODE	= 21,	/* Inode used for large EA */
 	EXT4_INODE_EOFBLOCKS	= 22,	/* Blocks allocated beyond EOF */
@@ -481,6 +484,7 @@ static inline void ext4_check_flag_values(void)
 	CHECK_FLAG_VALUE(TOPDIR);
 	CHECK_FLAG_VALUE(HUGE_FILE);
 	CHECK_FLAG_VALUE(EXTENTS);
+	CHECK_FLAG_VALUE(VERITY);
 	CHECK_FLAG_VALUE(EA_INODE);
 	CHECK_FLAG_VALUE(EOFBLOCKS);
 	CHECK_FLAG_VALUE(RESERVED);
@@ -1352,6 +1356,7 @@ enum {
 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
 	EXT4_STATE_DELALLOC_RESERVED,	/* blks already reserved for delalloc */
+	EXT4_STATE_VERITY_IN_PROGRESS, /* fs-verity metadata is being built */
 };
 
 #define EXT4_INODE_BIT_FNS(name, field, offset)				\
@@ -1451,6 +1456,12 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
 #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
 #define EXT4_FEATURE_RO_COMPAT_QUOTA		0x0100
+#define EXT4_FEATURE_RO_COMPAT_VERITY		0x8000
+#ifdef CONFIG_FS_VERITY
+#define EXT4_VERITY_FEATURE_SUPP EXT4_FEATURE_RO_COMPAT_VERITY
+#else
+#define EXT4_VERITY_FEATURE_SUPP 0
+#endif
 #define EXT4_FEATURE_RO_COMPAT_BIGALLOC		0x0200
 #define EXT4_FEATURE_RO_COMPAT_METADATA_CSUM	0x0400
 
@@ -1499,7 +1510,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
 					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR |\
 					 EXT4_FEATURE_RO_COMPAT_HUGE_FILE |\
-					 EXT4_FEATURE_RO_COMPAT_BIGALLOC)
+					 EXT4_FEATURE_RO_COMPAT_BIGALLOC | EXT4_VERITY_FEATURE_SUPP)
 
 /*
  * Default values for user and/or group using reserved blocks
@@ -2405,6 +2416,21 @@ extern struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
 #define EXT4_RESIZING	0
 extern int ext4_resize_begin(struct super_block *sb);
 extern void ext4_resize_end(struct super_block *sb);
+
+/* fs/ext4/verity.c: PAGE_SIZE blocks; metadata never changes i_size. */
+#ifdef CONFIG_FS_VERITY
+extern const struct fsverity_operations ext4_verityops;
+int ext4_verity_readpage(void *data, struct page *page);
+static inline bool ext4_verity_in_progress(struct inode *inode)
+{
+	return ext4_test_inode_state(inode, EXT4_STATE_VERITY_IN_PROGRESS);
+}
+#else
+static inline bool ext4_verity_in_progress(struct inode *inode)
+{
+	return false;
+}
+#endif
 
 #endif	/* __KERNEL__ */
 

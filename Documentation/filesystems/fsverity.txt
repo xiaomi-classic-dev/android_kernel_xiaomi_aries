@@ -1,0 +1,40 @@
+fs-verity on the MiOne 3.4 kernel
+==============================
+
+This backport uses the Linux v5.4 fs-verity core and ioctl ABI.  It supports
+SHA-256 and SHA-512, optional salts, FS_IOC_ENABLE_VERITY, FS_IOC_MEASURE_VERITY,
+and the FS_VERITY_FL inode flag.  The file digest covers the descriptor and
+Merkle root, not just the file bytes.  Userspace must compare this digest with
+a trusted value.  Built-in PKCS#7 signature verification is not implemented.
+
+Ext4 support requires extent-based regular files, PAGE_SIZE filesystem blocks
+(4096 bytes on MiOne), and the ext4 verity RO_COMPAT feature (0x8000).  Enabling
+CONFIG_FS_VERITY does not change any filesystem's on-disk feature flags.  An
+older kernel without this feature cannot mount a verity filesystem read-write.
+
+The disk layout matches upstream ext4: a root-first Merkle tree starts at the
+first 64 KiB boundary past i_size, followed by the descriptor; the descriptor
+size occupies the final four bytes of the last allocated filesystem block.
+Metadata allocation does not extend the user-visible file size.
+
+Unlike the v5.4 ext4 implementation, this kernel cannot write back pagecache
+pages past EOF.  Metadata is therefore allocated and journalled using ext4
+buffer heads.  The orphan list protects an interrupted enable operation; on
+filesystems without a journal, each metadata buffer is written synchronously.
+Metadata reads use that buffer cache, including uncheckpointed journal data.
+
+Protected data pages are read synchronously and verified before becoming
+uptodate.  This includes sparse holes and partial final pages.  Both ordinary
+reads and mmap faults use this path; direct I/O falls back to buffered I/O.
+Invalid data or hash blocks cause read errors (and SIGBUS on mmap access).
+This path favors correctness over the batched asynchronous I/O of newer ext4.
+
+Writable descriptors prevent enabling verity.  Protected files reject writable
+opens, truncation, fallocate, and extent-changing ioctls, including use as an
+extent-move donor.  Ordinary ext4 files retain their existing read path.
+This tree has no ext4 fscrypt support; block-device encryption is unaffected.
+
+Reference documentation and source:
+  https://www.kernel.org/doc/html/v6.2/filesystems/fsverity.html
+  https://docs.kernel.org/filesystems/ext4/verity.html
+  https://github.com/torvalds/linux/tree/v5.4/fs/verity

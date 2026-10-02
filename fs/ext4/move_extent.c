@@ -1120,6 +1120,11 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp,
 	int block_len_in_page;
 	int uninit;
 
+	if (IS_VERITY(orig_inode) || IS_VERITY(donor_inode) ||
+	    ext4_verity_in_progress(orig_inode) ||
+	    ext4_verity_in_progress(donor_inode))
+		return -EPERM;
+
 	if (orig_inode->i_sb != donor_inode->i_sb) {
 		ext4_debug("ext4 move extent: The argument files "
 			"should be in same FS [ino:orig %lu, donor %lu]\n",
