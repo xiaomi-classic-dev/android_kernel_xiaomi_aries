@@ -390,7 +390,8 @@ int ext4_verity_readpage(void *data, struct page *page)
 {
 	struct inode *inode = page->mapping->host;
 	struct buffer_head map = { .b_size = PAGE_SIZE };
-	bool metadata = page->index >= DIV_ROUND_UP(inode->i_size, PAGE_SIZE);
+	bool metadata = page->index >=
+		(ext4_verity_metadata_pos(inode) >> PAGE_SHIFT);
 	struct bio *bio;
 	struct ext4_verity_io io;
 	int err;
@@ -398,6 +399,12 @@ int ext4_verity_readpage(void *data, struct page *page)
 	if (inode->i_sb->s_blocksize != PAGE_SIZE) {
 		err = -EIO;
 		goto out;
+	}
+	/* Readahead may include the gap between EOF and the Merkle tree. */
+	if (!metadata &&
+	    page->index >= DIV_ROUND_UP(inode->i_size, PAGE_SIZE)) {
+		zero_user(page, 0, PAGE_SIZE);
+		goto success;
 	}
 	if (metadata) {
 		struct buffer_head *bh;
