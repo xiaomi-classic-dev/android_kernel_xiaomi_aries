@@ -27,6 +27,7 @@
 #define CLONE_NEWIPC		0x08000000	/* New ipcs */
 #define CLONE_NEWUSER		0x10000000	/* New user namespace */
 #define CLONE_NEWPID		0x20000000	/* New pid namespace */
+#define CLONE_NEWCGROUP 0x02000000
 #define CLONE_NEWNET		0x40000000	/* New network namespace */
 #define CLONE_IO		0x80000000	/* Clone io context */
 
@@ -1553,6 +1554,7 @@ struct task_struct {
 #ifdef CONFIG_CGROUPS
 	/* Control Group info protected by css_set_lock */
 	struct css_set __rcu *cgroups;
+	bool no_cgroup_migration;
 	/* cg_list protected by css_set_lock and tsk->alloc_lock */
 	struct list_head cg_list;
 #endif

@@ -903,9 +903,9 @@ static inline struct cpuacct *task_ca(struct task_struct *tsk)
 
 static inline struct cpuacct *parent_ca(struct cpuacct *ca)
 {
-	if (!ca || !ca->css.cgroup->parent)
+	if (!ca || !ca->css.parent)
 		return NULL;
-	return cgroup_ca(ca->css.cgroup->parent);
+	return container_of(ca->css.parent, struct cpuacct, css);
 }
 
 extern void cpuacct_charge(struct task_struct *tsk, u64 cputime);

@@ -22,7 +22,9 @@ struct fs_struct;
  * As soon as a single namespace is cloned or unshared, the
  * nsproxy is copied.
  */
+struct cgroup_namespace;
 struct nsproxy {
+	struct cgroup_namespace *cgroup_ns;
 	atomic_t count;
 	struct uts_namespace *uts_ns;
 	struct ipc_namespace *ipc_ns;

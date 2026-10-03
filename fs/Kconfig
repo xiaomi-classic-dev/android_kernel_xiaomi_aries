@@ -109,6 +109,7 @@ menu "Pseudo filesystems"
 
 source "fs/proc/Kconfig"
 source "fs/sysfs/Kconfig"
+source "fs/kernfs/Kconfig"
 
 config TMPFS
 	bool "Tmpfs virtual memory file system support (former shm fs)"

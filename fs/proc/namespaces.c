@@ -1,4 +1,5 @@
 #include <linux/proc_fs.h>
+#include <linux/proc_ns.h>
 #include <linux/nsproxy.h>
 #include <linux/sched.h>
 #include <linux/ptrace.h>
@@ -25,6 +26,9 @@ static const struct proc_ns_operations *ns_entries[] = {
 	&ipcns_operations,
 #endif
 	&mntns_operations,
+#ifdef CONFIG_CGROUPS
+	&cgroupns_operations,
+#endif
 };
 
 static const struct file_operations ns_file_operations = {

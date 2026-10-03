@@ -593,6 +593,7 @@ config HAVE_UNSTABLE_SCHED_CLOCK
 	bool
 
 menuconfig CGROUPS
+	select KERNFS
 	boolean "Control Group support"
 	depends on EVENTFD
 	help
@@ -1483,3 +1484,33 @@ config PADATA
 	bool
 
 source "kernel/Kconfig.locks"
+
+config CGROUP_BPF
+        bool "Support for eBPF programs attached to cgroups"
+        depends on CGROUPS && BPF_SYSCALL
+        select SOCK_CGROUP_DATA
+        help
+          Allow attaching eBPF programs to a cgroup using the bpf(2)
+          syscall command BPF_PROG_ATTACH.
+
+          In which context these programs are accessed depends on the type
+          of attachment. For instance, programs that are attached using
+          BPF_CGROUP_INET_INGRESS will be executed on the ingress path of
+          inet sockets.
+
+config BPF_UNPRIV_DEFAULT_OFF
+	bool "Disable unprivileged BPF by default"
+	depends on BPF_SYSCALL
+	help
+	  Disables unprivileged BPF by default by setting the corresponding
+	  /proc/sys/kernel/unprivileged_bpf_disabled knob to 2. An admin can
+	  still reenable it by setting it to 0 later on, or permanently
+	  disable it by setting it to 1 (from which no other transition to
+	  0 is possible anymore).
+
+config BPF_JIT_ALWAYS_ON
+	bool "Permanently enable BPF JIT and remove BPF interpreter"
+	depends on BPF_SYSCALL && HAVE_BPF_JIT && BPF_JIT
+	help
+	  Enables BPF JIT and removes BPF interpreter to avoid
+	  speculative execution of BPF instructions by the interpreter

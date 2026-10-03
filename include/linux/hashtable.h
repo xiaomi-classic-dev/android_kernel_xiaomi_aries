@@ -214,4 +214,13 @@ static inline void hash_del_rcu(struct hlist_node *node)
 		&name[hash_min(key, HASH_BITS(name))], member)
 
 
+
+#define hash_for_each_new(name, bkt, obj, member)				\
+	for ((bkt) = 0, obj = NULL; obj == NULL && (bkt) < HASH_SIZE(name);\
+			(bkt)++)\
+		hlist_for_each_entry_new(obj, &name[bkt], member)
+
+#define hash_for_each_possible_new(name, obj, member, key)			\
+	hlist_for_each_entry_new(obj, &name[hash_min(key, HASH_BITS(name))], member)
+
 #endif

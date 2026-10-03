@@ -1,3 +1,4 @@
+#include <linux/cgroup.h>
 /*
  *  Copyright (C) 2006 IBM Corporation
  *
@@ -29,6 +30,7 @@
 static struct kmem_cache *nsproxy_cachep;
 
 struct nsproxy init_nsproxy = {
+	.cgroup_ns = &init_cgroup_ns,
 	.count	= ATOMIC_INIT(1),
 	.uts_ns	= &init_uts_ns,
 #if defined(CONFIG_POSIX_MQUEUE) || defined(CONFIG_SYSVIPC)
@@ -96,6 +98,13 @@ static struct nsproxy *create_new_namespaces(unsigned long flags,
 		goto out_net;
 	}
 
+	new_nsp->cgroup_ns = copy_cgroup_ns(flags, task_cred_xxx(tsk, user_ns),
+                                         tsk->nsproxy->cgroup_ns);
+	if (IS_ERR(new_nsp->cgroup_ns)) {
+		err = PTR_ERR(new_nsp->cgroup_ns);
+		put_net(new_nsp->net_ns);
+		goto out_net;
+	}
 	return new_nsp;
 
 out_net:
@@ -132,7 +141,7 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 	get_nsproxy(old_ns);
 
 	if (!(flags & (CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC |
-				CLONE_NEWPID | CLONE_NEWNET)))
+				CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP)))
 		return 0;
 
 	if (!ns_capable(user_ns, CAP_SYS_ADMIN)) {
@@ -167,6 +176,7 @@ out:
 
 void free_nsproxy(struct nsproxy *ns)
 {
+	put_cgroup_ns(ns->cgroup_ns);
 	if (ns->mnt_ns)
 		put_mnt_ns(ns->mnt_ns);
 	if (ns->uts_ns)
