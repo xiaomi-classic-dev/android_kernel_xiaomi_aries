@@ -65,5 +65,21 @@
 
 #define set_mb(var, value)	do { var = value; smp_mb(); } while (0)
 
+
+/* Conservative acquire/release operations for the legacy ARM barrier ABI. */
+#define smp_store_release(p, v) do { \
+ compiletime_assert_atomic_type(*(p)); \
+ smp_mb(); \
+ WRITE_ONCE(*(p), (v)); \
+} while (0)
+#define smp_load_acquire(p) ({ \
+ typeof(*(p)) __v = READ_ONCE(*(p)); \
+ compiletime_assert_atomic_type(*(p)); \
+ smp_mb(); \
+ __v; \
+})
+#define smp_mb__before_atomic() smp_mb()
+#define smp_mb__after_atomic() smp_mb()
+
 #endif /* !__ASSEMBLY__ */
 #endif /* __ASM_BARRIER_H */

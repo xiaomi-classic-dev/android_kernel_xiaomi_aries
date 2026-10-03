@@ -379,6 +379,11 @@ extern struct dentry *dget_parent(struct dentry *dentry);
  *	Returns true if the dentry passed is not currently hashed.
  */
  
+static inline struct inode *d_inode(const struct dentry *dentry)
+{
+ return dentry->d_inode;
+}
+
 static inline int d_unhashed(struct dentry *dentry)
 {
 	return hlist_bl_unhashed(&dentry->d_hash);

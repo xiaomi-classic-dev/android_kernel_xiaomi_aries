@@ -10,6 +10,8 @@
 #include <linux/types.h>
 #include <linux/ioctl.h>
 #include <linux/irqnr.h>
+#include <linux/percpu.h>
+#include <linux/once.h>
 
 /* ioctl()'s for the random number generator */
 
@@ -69,6 +71,8 @@ unsigned long randomize_range(unsigned long start, unsigned long end, unsigned l
 u32 prandom_u32(void);
 void prandom_bytes(void *buf, int nbytes);
 void prandom_seed(u32 seed);
+void prandom_seed_full_state(struct rnd_state __percpu *pcpu_state);
+#define prandom_init_once(pcpu_state) DO_ONCE(prandom_seed_full_state, pcpu_state)
 void prandom_reseed_late(void);
 
 /*

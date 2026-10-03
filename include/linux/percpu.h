@@ -59,7 +59,7 @@
  * larger than PERCPU_DYNAMIC_EARLY_SIZE.
  */
 #define PERCPU_DYNAMIC_EARLY_SLOTS	128
-#define PERCPU_DYNAMIC_EARLY_SIZE	(12 << 10)
+#define PERCPU_DYNAMIC_EARLY_SIZE	(20 << 10)
 
 /*
  * PERCPU_DYNAMIC_RESERVE indicates the amount of free area to piggy
@@ -107,7 +107,7 @@ enum pcpu_fc {
 
 	PCPU_FC_NR,
 };
-extern const char *pcpu_fc_names[PCPU_FC_NR];
+extern const char * const pcpu_fc_names[PCPU_FC_NR];
 
 extern enum pcpu_fc pcpu_chosen_fc;
 
@@ -158,7 +158,11 @@ extern void __init setup_per_cpu_areas(void);
 #endif
 extern void __init percpu_init_late(void);
 
+extern void __percpu *__alloc_percpu_gfp(size_t size, size_t align, gfp_t gfp);
 extern void __percpu *__alloc_percpu(size_t size, size_t align);
+
+#define alloc_percpu_gfp(type, gfp) \
+ (typeof(type) __percpu *)__alloc_percpu_gfp(sizeof(type), __alignof__(type), gfp)
 extern void free_percpu(void __percpu *__pdata);
 extern phys_addr_t per_cpu_ptr_to_phys(void *addr);
 

@@ -1077,6 +1077,11 @@ struct file {
 #endif
 };
 
+static inline struct inode *file_inode(const struct file *file)
+{
+ return file->f_path.dentry->d_inode;
+}
+
 struct file_handle {
 	__u32 handle_bytes;
 	int handle_type;

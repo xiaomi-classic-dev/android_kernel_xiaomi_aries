@@ -30,6 +30,27 @@ extern struct file *fget(unsigned int fd);
 extern struct file *fget_light(unsigned int fd, int *fput_needed);
 extern struct file *fget_raw(unsigned int fd);
 extern struct file *fget_raw_light(unsigned int fd, int *fput_needed);
+struct fd { struct file *file; int need_put; };
+
+static inline void fdput(struct fd fd)
+{
+ fput_light(fd.file, fd.need_put);
+}
+
+static inline struct fd fdget(unsigned int fd)
+{
+ int needed;
+ struct file *file = fget_light(fd, &needed);
+ return (struct fd) { file, needed };
+}
+
+static inline struct fd fdget_raw(unsigned int fd)
+{
+ int needed;
+ struct file *file = fget_raw_light(fd, &needed);
+ return (struct fd) { file, needed };
+}
+
 extern void set_close_on_exec(unsigned int fd, int flag);
 extern void put_filp(struct file *);
 extern int alloc_fd(unsigned start, unsigned flags);
