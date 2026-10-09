@@ -150,6 +150,12 @@ static int n_restart_orders;
 
 static int restart_level = RESET_SUBSYS_INDEPENDENT;
 
+/* Android stops services before the reboot syscall changes system_state. */
+static bool shutdown_in_progress;
+module_param(shutdown_in_progress, bool, 0644);
+MODULE_PARM_DESC(shutdown_in_progress,
+		"Ignore subsystem restart requests during userspace shutdown");
+
 int get_restart_level()
 {
 	return restart_level;
@@ -492,8 +498,10 @@ int subsystem_restart_dev(struct subsys_device *dev)
 	 * However, print a message so that we know that a subsystem behaved
 	 * unexpectedly here.
 	 */
-	if (system_state == SYSTEM_RESTART
-		|| system_state == SYSTEM_POWER_OFF) {
+	if (READ_ONCE(shutdown_in_progress) ||
+	    system_state == SYSTEM_RESTART ||
+	    system_state == SYSTEM_POWER_OFF ||
+	    system_state == SYSTEM_HALT) {
 		pr_err("%s crashed during a system poweroff/shutdown.\n", name);
 		return -EBUSY;
 	}
