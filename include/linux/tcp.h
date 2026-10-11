@@ -216,6 +216,7 @@ struct tcp_cookie_transactions {
 
 #include <linux/skbuff.h>
 #include <linux/dmaengine.h>
+#include <linux/u64_stats_sync.h>
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
