@@ -839,6 +839,14 @@ static struct kobj_type ktype_cpufreq = {
 	.release	= cpufreq_sysfs_release,
 };
 
+static void cpufreq_remove_policy_link(struct cpufreq_policy *policy)
+{
+	char name[24];
+
+	snprintf(name, sizeof(name), "policy%u", policy->sysfs_policy_cpu);
+	sysfs_remove_link(cpufreq_global_kobject, name);
+}
+
 /*
  * Returns:
  *   Negative: Failure
@@ -970,6 +978,7 @@ static int cpufreq_add_dev_interface(unsigned int cpu,
 	unsigned long flags;
 	int ret = 0;
 	unsigned int j;
+	char policy_name[24];
 
 	/* prepare interface data */
 	ret = kobject_init_and_add(&policy->kobj, &ktype_cpufreq,
@@ -1035,6 +1044,32 @@ static int cpufreq_add_dev_interface(unsigned int cpu,
 
 	if (ret) {
 		pr_debug("setting policy failed\n");
+		if (cpufreq_driver->exit)
+			cpufreq_driver->exit(policy);
+		return ret;
+	}
+
+	/* Expose the actual policy without relocating legacy CPU directories.
+	 * Use the first related CPU so a shared policy keeps its name when its
+	 * owner changes. Removal/recreation follows the existing hotplug path.
+	 */
+	policy->sysfs_policy_cpu = cpumask_first(
+		cpumask_empty(policy->related_cpus) ? policy->cpus :
+		policy->related_cpus);
+	snprintf(policy_name, sizeof(policy_name), "policy%u",
+		 policy->sysfs_policy_cpu);
+	ret = sysfs_create_link(cpufreq_global_kobject, &policy->kobj, policy_name);
+	if (ret) {
+		__cpufreq_governor(policy, CPUFREQ_GOV_STOP);
+		for_each_cpu(j, policy->cpus) {
+			struct device *cpu_dev;
+
+			if (j == cpu || !cpu_online(j))
+				continue;
+			cpu_dev = get_cpu_device(j);
+			sysfs_remove_link(&cpu_dev->kobj, "cpufreq");
+			cpufreq_cpu_put(policy);
+		}
 		if (cpufreq_driver->exit)
 			cpufreq_driver->exit(policy);
 	}
@@ -1288,6 +1323,7 @@ static int __cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif
 
 	kobj = &data->kobj;
 	cmp = &data->kobj_unregister;
+	cpufreq_remove_policy_link(data);
 	unlock_policy_rwsem_write(cpu);
 	kobject_put(kobj);
 

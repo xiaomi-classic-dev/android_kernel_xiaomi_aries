@@ -95,6 +95,7 @@ struct cpufreq_policy {
 	unsigned int		shared_type; /* ANY or ALL affected CPUs
 						should set cpufreq */
 	unsigned int		cpu;    /* cpu nr of registered CPU */
+	unsigned int		sysfs_policy_cpu; /* CPU naming the accounting link */
 	struct cpufreq_cpuinfo	cpuinfo;/* see above */
 
 	unsigned int		min;    /* in kHz */
