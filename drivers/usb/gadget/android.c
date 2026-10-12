@@ -365,6 +365,8 @@ static void android_disable(struct android_dev *dev)
 /* Supported functions initialization */
 
 struct functionfs_config {
+	/* Function selection may be cleared while ep0 is still open. */
+	struct android_dev *dev;
 	bool opened;
 	bool enabled;
 	struct ffs_data *data;
@@ -373,11 +375,21 @@ struct functionfs_config {
 static int ffs_function_init(struct android_usb_function *f,
 			     struct usb_composite_dev *cdev)
 {
-	f->config = kzalloc(sizeof(struct functionfs_config), GFP_KERNEL);
-	if (!f->config)
+	struct functionfs_config *config;
+	int ret;
+
+	config = kzalloc(sizeof(*config), GFP_KERNEL);
+	if (!config)
 		return -ENOMEM;
 
-	return functionfs_init();
+	config->dev = cdev_to_android_dev(cdev);
+	f->config = config;
+	ret = functionfs_init();
+	if (ret) {
+		kfree(config);
+		f->config = NULL;
+	}
+	return ret;
 }
 
 static void ffs_function_cleanup(struct android_usb_function *f)
@@ -477,8 +489,8 @@ static struct android_usb_function ffs_function = {
 
 static int functionfs_ready_callback(struct ffs_data *ffs)
 {
-	struct android_dev *dev = ffs_function.android_dev;
 	struct functionfs_config *config = ffs_function.config;
+	struct android_dev *dev = config->dev;
 	int ret = 0;
 
 	mutex_lock(&dev->mutex);
@@ -500,8 +512,8 @@ err:
 
 static void functionfs_closed_callback(struct ffs_data *ffs)
 {
-	struct android_dev *dev = ffs_function.android_dev;
 	struct functionfs_config *config = ffs_function.config;
+	struct android_dev *dev = config->dev;
 
 	mutex_lock(&dev->mutex);
 
