@@ -2252,7 +2252,7 @@ void __init cpuset_init_smp(void)
 	top_cpuset.mems_allowed = node_states[N_HIGH_MEMORY];
 	top_cpuset.old_mems_allowed = top_cpuset.mems_allowed;
 
-	register_hotmemory_notifier(&cpuset_track_online_nodes_nb);
+	register_memory_notifier(&cpuset_track_online_nodes_nb);
 }
 
 /**
