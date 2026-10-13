@@ -33,6 +33,13 @@
 #define cpu_cgroup_subsys cpu_cgrp_subsys
 #define cpuacct_subsys cpuacct_cgrp_subsys
 #define bfqio_subsys bfqio_cgrp_subsys
+#define mem_cgroup_subsys memory_cgrp_subsys
+#define mem_cgroup_subsys_id memory_cgrp_id
+
+#ifdef CONFIG_CGROUP_MEM_RES_CTLR
+void cgroup_lock(void);
+void cgroup_unlock(void);
+#endif
 
 /*
  * All weight knobs on the default hierarhcy should use the following min,

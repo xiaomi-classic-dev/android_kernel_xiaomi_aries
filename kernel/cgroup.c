@@ -98,6 +98,19 @@ static DEFINE_MUTEX(cgroup_mutex);
 static DEFINE_SPINLOCK(css_set_lock);
 #endif
 
+#ifdef CONFIG_CGROUP_MEM_RES_CTLR
+/* Serialize the retained memory controller's hierarchy settings. */
+void cgroup_lock(void)
+{
+	mutex_lock(&cgroup_mutex);
+}
+
+void cgroup_unlock(void)
+{
+	mutex_unlock(&cgroup_mutex);
+}
+#endif
+
 /*
  * Protects cgroup_idr and css_idr so that IDs can be released without
  * grabbing cgroup_mutex.

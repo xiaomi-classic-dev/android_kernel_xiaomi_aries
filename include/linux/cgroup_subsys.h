@@ -24,7 +24,7 @@ SUBSYS(cpuacct)
 SUBSYS(blkio)
 #endif
 
-#if IS_ENABLED(CONFIG_MEMCG)
+#if IS_ENABLED(CONFIG_CGROUP_MEM_RES_CTLR)
 SUBSYS(memory)
 #endif
 

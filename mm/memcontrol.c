@@ -50,6 +50,9 @@
 #include <linux/page_cgroup.h>
 #include <linux/cpu.h>
 #include <linux/oom.h>
+#include <linux/file.h>
+#include <linux/poll.h>
+#include <linux/idr.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/tcp_memcontrol.h>
@@ -203,6 +206,45 @@ struct mem_cgroup_thresholds {
 };
 
 /* for OOM */
+struct mem_cgroup_event {
+	/*
+	 * memcg which the event belongs to.
+	 */
+	struct mem_cgroup *memcg;
+	struct cftype *cft;
+	/*
+	 * eventfd to signal userspace about the event.
+	 */
+	struct eventfd_ctx *eventfd;
+	/*
+	 * Each of these stored in a list by the cgroup.
+	 */
+	struct list_head list;
+	/*
+	 * register_event() callback will be used to add new userspace
+	 * waiter for changes related to this event.  Use eventfd_signal()
+	 * on eventfd to send notification to userspace.
+	 */
+	int (*register_event)(struct cgroup *cgrp, struct cftype *cft,
+			      struct eventfd_ctx *eventfd, const char *args);
+	/*
+	 * unregister_event() callback will be called when userspace closes
+	 * the eventfd or on cgroup removing.  This callback must be set,
+	 * if you want provide notification functionality.
+	 */
+	void (*unregister_event)(struct cgroup *cgrp, struct cftype *cft,
+				 struct eventfd_ctx *eventfd);
+	/*
+	 * All fields below needed to unregister event when
+	 * userspace closes eventfd.
+	 */
+	poll_table pt;
+	wait_queue_head_t *wqh;
+	wait_queue_t wait;
+	struct work_struct remove;
+};
+
+
 struct mem_cgroup_eventfd_list {
 	struct list_head list;
 	struct eventfd_ctx *eventfd;
@@ -223,6 +265,9 @@ static void mem_cgroup_oom_notify(struct mem_cgroup *memcg);
  * a feature that will be implemented much later in the future.
  */
 struct mem_cgroup {
+	int legacy_id;
+	spinlock_t event_list_lock;
+	struct list_head event_list;
 	struct cgroup_subsys_state css;
 	/*
 	 * the counter to account for memory usage
@@ -397,6 +442,86 @@ enum charge_type {
 
 static void mem_cgroup_get(struct mem_cgroup *memcg);
 static void mem_cgroup_put(struct mem_cgroup *memcg);
+
+/* 3.4 charge accounting retained with the imported css/kernfs core. */
+static DEFINE_IDR(memcg_legacy_ids);
+static DEFINE_SPINLOCK(memcg_legacy_id_lock);
+
+static int memcg_alloc_legacy_id(struct mem_cgroup *memcg)
+{
+	int id;
+	idr_preload(GFP_KERNEL);
+	spin_lock(&memcg_legacy_id_lock);
+	id = idr_alloc(&memcg_legacy_ids, memcg, 1, 65536, GFP_NOWAIT);
+	spin_unlock(&memcg_legacy_id_lock);
+	idr_preload_end();
+	if (id < 0)
+		return id;
+	memcg->legacy_id = id;
+	return 0;
+}
+
+static int css_id(struct cgroup_subsys_state *css)
+{
+	return container_of(css, struct mem_cgroup, css)->legacy_id;
+}
+
+static struct cgroup_subsys_state *css_lookup(struct cgroup_subsys *ss, int id)
+{
+	struct mem_cgroup *memcg = idr_find(&memcg_legacy_ids, id);
+	return memcg ? &memcg->css : NULL;
+}
+
+static bool css_is_removed(struct cgroup_subsys_state *css)
+{
+	return !(css->flags & CSS_ONLINE);
+}
+
+static bool css_is_ancestor(const struct cgroup_subsys_state *css,
+			    const struct cgroup_subsys_state *root)
+{
+	for (; css; css = css->parent)
+		if (css == root)
+			return true;
+	return false;
+}
+
+static struct cgroup_subsys_state *css_get_next(struct cgroup_subsys *ss,
+		int id, struct cgroup_subsys_state *root, int *found)
+{
+	struct mem_cgroup *memcg;
+	while ((memcg = idr_get_next(&memcg_legacy_ids, &id))) {
+		if (!css_is_removed(&memcg->css) && css_is_ancestor(&memcg->css, root)) {
+			*found = id;
+			return &memcg->css;
+		}
+		id++;
+	}
+	return NULL;
+}
+
+static bool cgroup_task_count(struct cgroup *cgrp)
+{
+	struct css_task_iter it;
+	bool tasks;
+	css_task_iter_start(&cgrp->self, &it);
+	tasks = css_task_iter_next(&it) != NULL;
+	css_task_iter_end(&it);
+	return tasks;
+}
+
+static void cgroup_exclude_rmdir(struct cgroup_subsys_state *css) { css_get(css); }
+static void cgroup_release_and_wakeup_rmdir(struct cgroup_subsys_state *css) { css_put(css); }
+
+struct memcg_map_cb {
+	void (*fill)(struct memcg_map_cb *, const char *, u64);
+	struct seq_file *seq;
+};
+
+static void memcg_map_fill(struct memcg_map_cb *cb, const char *name, u64 value)
+{
+	seq_printf(cb->seq, "%s %llu\n", name, (unsigned long long)value);
+}
 
 /* Some nice accessors for the vmpressure. */
 struct vmpressure *memcg_to_vmpressure(struct mem_cgroup *memcg)
@@ -1309,7 +1434,7 @@ int mem_cgroup_swappiness(struct mem_cgroup *memcg)
 	struct cgroup *cgrp = memcg->css.cgroup;
 
 	/* root ? */
-	if (cgrp->parent == NULL)
+	if (cgroup_parent(cgrp) == NULL)
 		return vm_swappiness;
 
 	return memcg->swappiness;
@@ -2697,7 +2822,7 @@ static int mem_cgroup_move_parent(struct page *page,
 				  gfp_t gfp_mask)
 {
 	struct cgroup *cg = child->css.cgroup;
-	struct cgroup *pcg = cg->parent;
+	struct cgroup *pcg = cgroup_parent(cg);
 	struct mem_cgroup *parent;
 	unsigned int nr_pages;
 	unsigned long uninitialized_var(flags);
@@ -3768,7 +3893,7 @@ static int mem_cgroup_force_empty(struct mem_cgroup *memcg, bool free_all)
 move_account:
 	do {
 		ret = -EBUSY;
-		if (cgroup_task_count(cgrp) || !list_empty(&cgrp->children))
+		if (cgroup_task_count(cgrp) || css_has_online_children(&cgrp->self))
 			goto out;
 		ret = -EINTR;
 		if (signal_pending(current))
@@ -3805,7 +3930,7 @@ out:
 
 try_to_free:
 	/* returns EBUSY if there is a task or if we come here twice. */
-	if (cgroup_task_count(cgrp) || !list_empty(&cgrp->children) || shrink) {
+	if (cgroup_task_count(cgrp) || css_has_online_children(&cgrp->self) || shrink) {
 		ret = -EBUSY;
 		goto out;
 	}
@@ -3836,6 +3961,8 @@ try_to_free:
 
 int mem_cgroup_force_empty_write(struct cgroup *cont, unsigned int event)
 {
+	if (!cgroup_parent(cont))
+		return -EINVAL;
 	return mem_cgroup_force_empty(mem_cgroup_from_cont(cont), true);
 }
 
@@ -3850,7 +3977,7 @@ static int mem_cgroup_hierarchy_write(struct cgroup *cont, struct cftype *cft,
 {
 	int retval = 0;
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
-	struct cgroup *parent = cont->parent;
+	struct cgroup *parent = cgroup_parent(cont);
 	struct mem_cgroup *parent_memcg = NULL;
 
 	if (parent)
@@ -3867,7 +3994,7 @@ static int mem_cgroup_hierarchy_write(struct cgroup *cont, struct cftype *cft,
 	 */
 	if ((!parent_memcg || !parent_memcg->use_hierarchy) &&
 				(val == 1 || val == 0)) {
-		if (list_empty(&cont->children))
+		if (!css_has_online_children(&cont->self))
 			memcg->use_hierarchy = val;
 		else
 			retval = -EBUSY;
@@ -4002,8 +4129,8 @@ static void memcg_get_hierarchical_limit(struct mem_cgroup *memcg,
 	if (!memcg->use_hierarchy)
 		goto out;
 
-	while (cgroup->parent) {
-		cgroup = cgroup->parent;
+	while (cgroup_parent(cgroup)) {
+		cgroup = cgroup_parent(cgroup);
 		memcg = mem_cgroup_from_cont(cgroup);
 		if (!memcg->use_hierarchy)
 			break;
@@ -4214,7 +4341,7 @@ static int mem_control_numa_stat_show(struct seq_file *m, void *arg)
 #endif /* CONFIG_NUMA */
 
 static int mem_control_stat_show(struct cgroup *cont, struct cftype *cft,
-				 struct cgroup_map_cb *cb)
+				 struct memcg_map_cb *cb)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
 	struct mcs_total_stat mystat;
@@ -4293,16 +4420,16 @@ static int mem_cgroup_swappiness_write(struct cgroup *cgrp, struct cftype *cft,
 	if (val > 100)
 		return -EINVAL;
 
-	if (cgrp->parent == NULL)
+	if (cgroup_parent(cgrp) == NULL)
 		return -EINVAL;
 
-	parent = mem_cgroup_from_cont(cgrp->parent);
+	parent = mem_cgroup_from_cont(cgroup_parent(cgrp));
 
 	cgroup_lock();
 
 	/* If under hierarchy, only empty-root can set this value */
 	if ((parent->use_hierarchy) ||
-	    (memcg->use_hierarchy && !list_empty(&cgrp->children))) {
+	    (memcg->use_hierarchy && css_has_online_children(&cgrp->self))) {
 		cgroup_unlock();
 		return -EINVAL;
 	}
@@ -4616,7 +4743,7 @@ static void mem_cgroup_oom_unregister_event(struct cgroup *cgrp,
 }
 
 static int mem_cgroup_oom_control_read(struct cgroup *cgrp,
-	struct cftype *cft,  struct cgroup_map_cb *cb)
+	struct cftype *cft,  struct memcg_map_cb *cb)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cgrp);
 
@@ -4636,15 +4763,15 @@ static int mem_cgroup_oom_control_write(struct cgroup *cgrp,
 	struct mem_cgroup *parent;
 
 	/* cannot set to root cgroup and only 0 and 1 are allowed */
-	if (!cgrp->parent || !((val == 0) || (val == 1)))
+	if (!cgroup_parent(cgrp) || !((val == 0) || (val == 1)))
 		return -EINVAL;
 
-	parent = mem_cgroup_from_cont(cgrp->parent);
+	parent = mem_cgroup_from_cont(cgroup_parent(cgrp));
 
 	cgroup_lock();
 	/* oom-kill-disable is a flag for subhierarchy. */
 	if ((parent->use_hierarchy) ||
-	    (memcg->use_hierarchy && !list_empty(&cgrp->children))) {
+	    (memcg->use_hierarchy && css_has_online_children(&cgrp->self))) {
 		cgroup_unlock();
 		return -EINVAL;
 	}
@@ -4672,7 +4799,7 @@ static int mem_control_numa_stat_open(struct inode *unused, struct file *file)
 #endif /* CONFIG_NUMA */
 
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR_KMEM
-static int register_kmem_files(struct cgroup *cont, struct cgroup_subsys *ss)
+static int __maybe_unused register_kmem_files(struct cgroup *cont, struct cgroup_subsys *ss)
 {
 	/*
 	 * Part of this would be better living in a separate allocation
@@ -4689,7 +4816,7 @@ static void kmem_cgroup_destroy(struct cgroup *cont)
 	mem_cgroup_sockets_destroy(cont);
 }
 #else
-static int register_kmem_files(struct cgroup *cont, struct cgroup_subsys *ss)
+static int __maybe_unused register_kmem_files(struct cgroup *cont, struct cgroup_subsys *ss)
 {
 	return 0;
 }
@@ -4699,73 +4826,356 @@ static void kmem_cgroup_destroy(struct cgroup *cont)
 }
 #endif
 
+static void memcg_event_remove(struct work_struct *work)
+{
+	struct mem_cgroup_event *event =
+		container_of(work, struct mem_cgroup_event, remove);
+	struct mem_cgroup *memcg = event->memcg;
+
+	remove_wait_queue(event->wqh, &event->wait);
+
+	event->unregister_event(memcg->css.cgroup, event->cft, event->eventfd);
+
+	/* Notify userspace the event is going away. */
+	eventfd_signal(event->eventfd, 1);
+
+	eventfd_ctx_put(event->eventfd);
+	kfree(event);
+	css_put(&memcg->css);
+}
+
+/*
+ * Gets called on POLLHUP on eventfd when user closes it.
+ *
+ * Called with wqh->lock held and interrupts disabled.
+ */
+static int memcg_event_wake(wait_queue_t *wait, unsigned mode,
+			    int sync, void *key)
+{
+	struct mem_cgroup_event *event =
+		container_of(wait, struct mem_cgroup_event, wait);
+	struct mem_cgroup *memcg = event->memcg;
+	unsigned long flags = (unsigned long)key;
+
+	if (flags & POLLHUP) {
+		/*
+		 * If the event has been detached at cgroup removal, we
+		 * can simply return knowing the other side will cleanup
+		 * for us.
+		 *
+		 * We can't race against event freeing since the other
+		 * side will require wqh->lock via remove_wait_queue(),
+		 * which we hold.
+		 */
+		spin_lock(&memcg->event_list_lock);
+		if (!list_empty(&event->list)) {
+			list_del_init(&event->list);
+			/*
+			 * We are in atomic context, but cgroup_event_remove()
+			 * may sleep, so we have to call it in workqueue.
+			 */
+			schedule_work(&event->remove);
+		}
+		spin_unlock(&memcg->event_list_lock);
+	}
+
+	return 0;
+}
+
+static void memcg_event_ptable_queue_proc(struct file *file,
+		wait_queue_head_t *wqh, poll_table *pt)
+{
+	struct mem_cgroup_event *event =
+		container_of(pt, struct mem_cgroup_event, pt);
+
+	event->wqh = wqh;
+	add_wait_queue(wqh, &event->wait);
+}
+
+/*
+ * DO NOT USE IN NEW FILES.
+ *
+ * Parse input and register new cgroup event handler.
+ *
+ * Input must be in format '<event_fd> <control_fd> <args>'.
+ * Interpretation of args is defined by control file implementation.
+ */
+static ssize_t memcg_write_event_control(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+	struct cgroup_subsys_state *css = of_css(of);
+	struct mem_cgroup *memcg = container_of(css, struct mem_cgroup, css);
+	struct mem_cgroup_event *event;
+	struct cgroup_subsys_state *cfile_css;
+	unsigned int efd, cfd;
+	struct file *efile;
+	struct file *cfile;
+	const char *name;
+	char *endp;
+	int ret;
+
+	buf = strstrip(buf);
+
+	efd = simple_strtoul(buf, &endp, 10);
+	if (*endp != ' ')
+		return -EINVAL;
+	buf = endp + 1;
+
+	cfd = simple_strtoul(buf, &endp, 10);
+	if ((*endp != ' ') && (*endp != '\0'))
+		return -EINVAL;
+	buf = endp + 1;
+
+	event = kzalloc(sizeof(*event), GFP_KERNEL);
+	if (!event)
+		return -ENOMEM;
+
+	event->memcg = memcg;
+	INIT_LIST_HEAD(&event->list);
+	init_poll_funcptr(&event->pt, memcg_event_ptable_queue_proc);
+	init_waitqueue_func_entry(&event->wait, memcg_event_wake);
+	INIT_WORK(&event->remove, memcg_event_remove);
+
+	efile = fget(efd);
+	if (!efile) {
+		ret = -EBADF;
+		goto out_kfree;
+	}
+
+	event->eventfd = eventfd_ctx_fileget(efile);
+	if (IS_ERR(event->eventfd)) {
+		ret = PTR_ERR(event->eventfd);
+		goto out_put_efile;
+	}
+
+	cfile = fget(cfd);
+	if (!cfile) {
+		ret = -EBADF;
+		goto out_put_eventfd;
+	}
+
+	/* the process need read permission on control file */
+	/* AV: shouldn't we check that it's been opened for read instead? */
+	ret = inode_permission(cfile->f_path.dentry->d_inode, MAY_READ);
+	if (ret < 0)
+		goto out_put_cfile;
+
+	/*
+	 * Determine the event callbacks and set them in @event.  This used
+	 * to be done via struct cftype but cgroup core no longer knows
+	 * about these events.  The following is crude but the whole thing
+	 * is for compatibility anyway.
+	 *
+	 * DO NOT ADD NEW FILES.
+	 */
+	name = cfile->f_path.dentry->d_name.name;
+
+	if (!strcmp(name, "memory.usage_in_bytes")) {
+		event->register_event = mem_cgroup_usage_register_event;
+		event->unregister_event = mem_cgroup_usage_unregister_event;
+	} else if (!strcmp(name, "memory.oom_control")) {
+		event->register_event = mem_cgroup_oom_register_event;
+		event->unregister_event = mem_cgroup_oom_unregister_event;
+	} else if (!strcmp(name, "memory.pressure_level")) {
+		event->register_event = vmpressure_register_event;
+		event->unregister_event = vmpressure_unregister_event;
+	} else if (!strcmp(name, "memory.memsw.usage_in_bytes")) {
+		event->register_event = mem_cgroup_usage_register_event;
+		event->unregister_event = mem_cgroup_usage_unregister_event;
+	} else {
+		ret = -EINVAL;
+		goto out_put_cfile;
+	}
+
+	/*
+	 * Verify @cfile should belong to @css.  Also, remaining events are
+	 * automatically removed on cgroup destruction but the removal is
+	 * asynchronous, so take an extra ref on @css.
+	 */
+	cfile_css = css_tryget_online_from_dir(cfile->f_path.dentry->d_parent,
+					       &memory_cgrp_subsys);
+	ret = -EINVAL;
+	if (IS_ERR(cfile_css))
+		goto out_put_cfile;
+	if (cfile_css != css) {
+		css_put(cfile_css);
+		goto out_put_cfile;
+	}
+
+	{
+		static struct cftype memory_usage = { .private = MEMFILE_PRIVATE(_MEM, RES_USAGE) };
+		static struct cftype memsw_usage = { .private = MEMFILE_PRIVATE(_MEMSWAP, RES_USAGE) };
+		static struct cftype oom = { .private = MEMFILE_PRIVATE(_OOM_TYPE, OOM_CONTROL) };
+		static struct cftype pressure;
+		event->cft = !strcmp(name, "memory.usage_in_bytes") ? &memory_usage :
+			!strcmp(name, "memory.memsw.usage_in_bytes") ? &memsw_usage :
+			!strcmp(name, "memory.oom_control") ? &oom : &pressure;
+	}
+	ret = event->register_event(css->cgroup, event->cft, event->eventfd, buf);
+	if (ret)
+		goto out_put_css;
+
+	efile->f_op->poll(efile, &event->pt);
+
+	spin_lock(&memcg->event_list_lock);
+	list_add(&event->list, &memcg->event_list);
+	spin_unlock(&memcg->event_list_lock);
+
+	fput(cfile);
+	fput(efile);
+
+	return nbytes;
+
+out_put_css:
+	css_put(css);
+out_put_cfile:
+	fput(cfile);
+out_put_eventfd:
+	eventfd_ctx_put(event->eventfd);
+out_put_efile:
+	fput(efile);
+out_kfree:
+	kfree(event);
+
+	return ret;
+}
+
+
+static u64 mem_cgroup_hierarchy_read_css(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return mem_cgroup_hierarchy_read(css->cgroup, cft);
+}
+
+static u64 mem_cgroup_move_charge_read_css(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return mem_cgroup_move_charge_read(css->cgroup, cft);
+}
+
+static u64 mem_cgroup_read_css(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return mem_cgroup_read(css->cgroup, cft);
+}
+
+static u64 mem_cgroup_swappiness_read_css(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return mem_cgroup_swappiness_read(css->cgroup, cft);
+}
+
+static int mem_cgroup_hierarchy_write_css(struct cgroup_subsys_state *css, struct cftype *cft, u64 value)
+{
+	return mem_cgroup_hierarchy_write(css->cgroup, cft, value);
+}
+
+static int mem_cgroup_move_charge_write_css(struct cgroup_subsys_state *css, struct cftype *cft, u64 value)
+{
+	return mem_cgroup_move_charge_write(css->cgroup, cft, value);
+}
+
+static int mem_cgroup_oom_control_write_css(struct cgroup_subsys_state *css, struct cftype *cft, u64 value)
+{
+	return mem_cgroup_oom_control_write(css->cgroup, cft, value);
+}
+
+static int mem_cgroup_swappiness_write_css(struct cgroup_subsys_state *css, struct cftype *cft, u64 value)
+{
+	return mem_cgroup_swappiness_write(css->cgroup, cft, value);
+}
+
+static int mem_cgroup_oom_control_read_css(struct seq_file *seq, void *v)
+{
+	struct memcg_map_cb cb = { .fill = memcg_map_fill, .seq = seq };
+	return mem_cgroup_oom_control_read(seq_css(seq)->cgroup, seq_cft(seq), &cb);
+}
+
+static int mem_control_stat_show_css(struct seq_file *seq, void *v)
+{
+	struct memcg_map_cb cb = { .fill = memcg_map_fill, .seq = seq };
+	return mem_control_stat_show(seq_css(seq)->cgroup, seq_cft(seq), &cb);
+}
+
+static ssize_t mem_cgroup_write_kernfs(struct kernfs_open_file *of, char *buf, size_t nbytes, loff_t off)
+{
+	int ret = mem_cgroup_write(of_css(of)->cgroup, of_cft(of), strstrip(buf));
+	return ret ? ret : nbytes;
+}
+
+static ssize_t mem_cgroup_force_empty_write_kernfs(struct kernfs_open_file *of, char *buf, size_t nbytes, loff_t off)
+{
+	int ret = mem_cgroup_force_empty_write(of_css(of)->cgroup, of_cft(of)->private);
+	return ret ? ret : nbytes;
+}
+
+static ssize_t mem_cgroup_reset_kernfs(struct kernfs_open_file *of, char *buf, size_t nbytes, loff_t off)
+{
+	int ret = mem_cgroup_reset(of_css(of)->cgroup, of_cft(of)->private);
+	return ret ? ret : nbytes;
+}
+
 static struct cftype mem_cgroup_files[] = {
+	{ .name = "cgroup.event_control", .write = memcg_write_event_control,
+	  .flags = CFTYPE_NO_PREFIX },
+	{ .name = "pressure_level" },
 	{
 		.name = "usage_in_bytes",
 		.private = MEMFILE_PRIVATE(_MEM, RES_USAGE),
-		.read_u64 = mem_cgroup_read,
-		.register_event = mem_cgroup_usage_register_event,
-		.unregister_event = mem_cgroup_usage_unregister_event,
+		.read_u64 = mem_cgroup_read_css,
+
+
 	},
 	{
 		.name = "max_usage_in_bytes",
 		.private = MEMFILE_PRIVATE(_MEM, RES_MAX_USAGE),
-		.trigger = mem_cgroup_reset,
-		.read_u64 = mem_cgroup_read,
+		.write = mem_cgroup_reset_kernfs,
+		.read_u64 = mem_cgroup_read_css,
 	},
 	{
 		.name = "limit_in_bytes",
 		.private = MEMFILE_PRIVATE(_MEM, RES_LIMIT),
-		.write_string = mem_cgroup_write,
-		.read_u64 = mem_cgroup_read,
+		.write = mem_cgroup_write_kernfs,
+		.read_u64 = mem_cgroup_read_css,
 	},
 	{
 		.name = "soft_limit_in_bytes",
 		.private = MEMFILE_PRIVATE(_MEM, RES_SOFT_LIMIT),
-		.write_string = mem_cgroup_write,
-		.read_u64 = mem_cgroup_read,
+		.write = mem_cgroup_write_kernfs,
+		.read_u64 = mem_cgroup_read_css,
 	},
 	{
 		.name = "failcnt",
 		.private = MEMFILE_PRIVATE(_MEM, RES_FAILCNT),
-		.trigger = mem_cgroup_reset,
-		.read_u64 = mem_cgroup_read,
+		.write = mem_cgroup_reset_kernfs,
+		.read_u64 = mem_cgroup_read_css,
 	},
 	{
 		.name = "stat",
-		.read_map = mem_control_stat_show,
+		.seq_show = mem_control_stat_show_css,
 	},
 	{
 		.name = "force_empty",
-		.trigger = mem_cgroup_force_empty_write,
+		.write = mem_cgroup_force_empty_write_kernfs,
 	},
 	{
 		.name = "use_hierarchy",
-		.write_u64 = mem_cgroup_hierarchy_write,
-		.read_u64 = mem_cgroup_hierarchy_read,
+		.write_u64 = mem_cgroup_hierarchy_write_css,
+		.read_u64 = mem_cgroup_hierarchy_read_css,
 	},
 	{
 		.name = "swappiness",
-		.read_u64 = mem_cgroup_swappiness_read,
-		.write_u64 = mem_cgroup_swappiness_write,
+		.read_u64 = mem_cgroup_swappiness_read_css,
+		.write_u64 = mem_cgroup_swappiness_write_css,
 	},
 	{
 		.name = "move_charge_at_immigrate",
-		.read_u64 = mem_cgroup_move_charge_read,
-		.write_u64 = mem_cgroup_move_charge_write,
+		.read_u64 = mem_cgroup_move_charge_read_css,
+		.write_u64 = mem_cgroup_move_charge_write_css,
 	},
 	{
 		.name = "oom_control",
-		.read_map = mem_cgroup_oom_control_read,
-		.write_u64 = mem_cgroup_oom_control_write,
-		.register_event = mem_cgroup_oom_register_event,
-		.unregister_event = mem_cgroup_oom_unregister_event,
+		.seq_show = mem_cgroup_oom_control_read_css,
+		.write_u64 = mem_cgroup_oom_control_write_css,
+
+
 		.private = MEMFILE_PRIVATE(_OOM_TYPE, OOM_CONTROL),
-	},
-	{
-		.name = "pressure_level",
-		.register_event = vmpressure_register_event,
-		.unregister_event = vmpressure_unregister_event,
 	},
 #ifdef CONFIG_NUMA
 	{
@@ -4774,6 +5184,7 @@ static struct cftype mem_cgroup_files[] = {
 		.mode = S_IRUGO,
 	},
 #endif
+	{ }
 };
 
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR_SWAP
@@ -4781,39 +5192,39 @@ static struct cftype memsw_cgroup_files[] = {
 	{
 		.name = "memsw.usage_in_bytes",
 		.private = MEMFILE_PRIVATE(_MEMSWAP, RES_USAGE),
-		.read_u64 = mem_cgroup_read,
-		.register_event = mem_cgroup_usage_register_event,
-		.unregister_event = mem_cgroup_usage_unregister_event,
+		.read_u64 = mem_cgroup_read_css,
+
+
 	},
 	{
 		.name = "memsw.max_usage_in_bytes",
 		.private = MEMFILE_PRIVATE(_MEMSWAP, RES_MAX_USAGE),
-		.trigger = mem_cgroup_reset,
-		.read_u64 = mem_cgroup_read,
+		.write = mem_cgroup_reset_kernfs,
+		.read_u64 = mem_cgroup_read_css,
 	},
 	{
 		.name = "memsw.limit_in_bytes",
 		.private = MEMFILE_PRIVATE(_MEMSWAP, RES_LIMIT),
-		.write_string = mem_cgroup_write,
-		.read_u64 = mem_cgroup_read,
+		.write = mem_cgroup_write_kernfs,
+		.read_u64 = mem_cgroup_read_css,
 	},
 	{
 		.name = "memsw.failcnt",
 		.private = MEMFILE_PRIVATE(_MEMSWAP, RES_FAILCNT),
-		.trigger = mem_cgroup_reset,
-		.read_u64 = mem_cgroup_read,
+		.write = mem_cgroup_reset_kernfs,
+		.read_u64 = mem_cgroup_read_css,
 	},
+	{ }
 };
 
-static int register_memsw_files(struct cgroup *cont, struct cgroup_subsys *ss)
+static int __maybe_unused register_memsw_files(struct cgroup *cont, struct cgroup_subsys *ss)
 {
 	if (!do_swap_account)
 		return 0;
-	return cgroup_add_files(cont, ss, memsw_cgroup_files,
-				ARRAY_SIZE(memsw_cgroup_files));
+	return cgroup_add_legacy_cftypes(ss, memsw_cgroup_files);
 };
 #else
-static int register_memsw_files(struct cgroup *cont, struct cgroup_subsys *ss)
+static int __maybe_unused register_memsw_files(struct cgroup *cont, struct cgroup_subsys *ss)
 {
 	return 0;
 }
@@ -4921,7 +5332,11 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 	int node;
 
 	mem_cgroup_remove_from_trees(memcg);
-	free_css_id(&mem_cgroup_subsys, &memcg->css);
+	if (memcg->legacy_id) {
+		spin_lock(&memcg_legacy_id_lock);
+		idr_remove(&memcg_legacy_ids, memcg->legacy_id);
+		spin_unlock(&memcg_legacy_id_lock);
+	}
 
 	for_each_node(node)
 		free_mem_cgroup_per_zone_info(memcg, node);
@@ -5012,7 +5427,7 @@ err_cleanup:
 }
 
 static struct cgroup_subsys_state * __ref
-mem_cgroup_create(struct cgroup *cont)
+mem_cgroup_create(struct cgroup_subsys_state *parent_css)
 {
 	struct mem_cgroup *memcg, *parent;
 	long error = -ENOMEM;
@@ -5025,9 +5440,14 @@ mem_cgroup_create(struct cgroup *cont)
 	for_each_node(node)
 		if (alloc_mem_cgroup_per_zone_info(memcg, node))
 			goto free_out;
+	/* Allocate before taking the parent's charge-lifetime reference. */
+	error = memcg_alloc_legacy_id(memcg);
+	if (error)
+		goto free_out;
+	error = -ENOMEM;
 
 	/* root ? */
-	if (cont->parent == NULL) {
+	if (parent_css == NULL) {
 		int cpu;
 		enable_swap_cgroup();
 		parent = NULL;
@@ -5041,7 +5461,7 @@ mem_cgroup_create(struct cgroup *cont)
 		}
 		hotcpu_notifier(memcg_cpu_hotplug_callback, 0);
 	} else {
-		parent = mem_cgroup_from_cont(cont->parent);
+		parent = container_of(parent_css, struct mem_cgroup, css);
 		memcg->use_hierarchy = parent->use_hierarchy;
 		memcg->oom_kill_disable = parent->oom_kill_disable;
 	}
@@ -5065,6 +5485,8 @@ mem_cgroup_create(struct cgroup *cont)
 
 	if (parent)
 		memcg->swappiness = mem_cgroup_swappiness(parent);
+	spin_lock_init(&memcg->event_list_lock);
+	INIT_LIST_HEAD(&memcg->event_list);
 	atomic_set(&memcg->refcnt, 1);
 	memcg->move_charge_at_immigrate = 0;
 	mutex_init(&memcg->thresholds_lock);
@@ -5076,38 +5498,20 @@ free_out:
 	return ERR_PTR(error);
 }
 
-static int mem_cgroup_pre_destroy(struct cgroup *cont)
+
+
+static void mem_cgroup_destroy(struct cgroup_subsys_state *css)
 {
-	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	struct mem_cgroup *memcg = container_of(css, struct mem_cgroup, css);
 
-	return mem_cgroup_force_empty(memcg, false);
-}
-
-static void mem_cgroup_destroy(struct cgroup *cont)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
-
-	kmem_cgroup_destroy(cont);
+	/* Reclaim may have queued pressure work before css went offline. */
+	flush_work(&memcg->vmpressure.work);
+	kmem_cgroup_destroy(css->cgroup);
 
 	mem_cgroup_put(memcg);
 }
 
-static int mem_cgroup_populate(struct cgroup_subsys *ss,
-				struct cgroup *cont)
-{
-	int ret;
 
-	ret = cgroup_add_files(cont, ss, mem_cgroup_files,
-				ARRAY_SIZE(mem_cgroup_files));
-
-	if (!ret)
-		ret = register_memsw_files(cont, ss);
-
-	if (!ret)
-		ret = register_kmem_files(cont, ss);
-
-	return ret;
-}
 
 #ifdef CONFIG_MMU
 /* Handlers for move charge at task migration. */
@@ -5469,7 +5873,8 @@ static void mem_cgroup_clear_mc(void)
 static int mem_cgroup_can_attach(struct cgroup *cgroup,
 				 struct cgroup_taskset *tset)
 {
-	struct task_struct *p = cgroup_taskset_first(tset);
+	struct cgroup_subsys_state *dst_css;
+	struct task_struct *p = cgroup_taskset_first(tset, &dst_css);
 	int ret = 0;
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cgroup);
 
@@ -5658,7 +6063,8 @@ retry:
 static void mem_cgroup_move_task(struct cgroup *cont,
 				 struct cgroup_taskset *tset)
 {
-	struct task_struct *p = cgroup_taskset_first(tset);
+	struct cgroup_subsys_state *dst_css;
+	struct task_struct *p = cgroup_taskset_first(tset, &dst_css);
 	struct mm_struct *mm = get_task_mm(p);
 
 	if (mm) {
@@ -5691,8 +6097,9 @@ static int mem_cgroup_allow_attach(struct cgroup *cgrp,
 {
 	const struct cred *cred = current_cred(), *tcred;
 	struct task_struct *task;
+	struct cgroup_subsys_state *dst_css;
 
-	cgroup_taskset_for_each(task, cgrp, tset) {
+	cgroup_taskset_for_each(task, dst_css, tset) {
 		tcred = __task_cred(task);
 
 		if ((current != task) && !capable(CAP_SYS_ADMIN) &&
@@ -5703,19 +6110,72 @@ static int mem_cgroup_allow_attach(struct cgroup *cgrp,
 	return 0;
 }
 
+static int memcg_can_attach_css(struct cgroup_taskset *tset)
+{
+	struct cgroup_subsys_state *css;
+	if (!cgroup_taskset_first(tset, &css))
+		return 0;
+	return mem_cgroup_can_attach(css->cgroup, tset);
+}
+static void memcg_cancel_attach_css(struct cgroup_taskset *tset)
+{
+	struct cgroup_subsys_state *css;
+	if (cgroup_taskset_first(tset, &css))
+		mem_cgroup_cancel_attach(css->cgroup, tset);
+}
+static void memcg_attach_css(struct cgroup_taskset *tset)
+{
+	struct cgroup_subsys_state *css;
+	if (cgroup_taskset_first(tset, &css))
+		mem_cgroup_move_task(css->cgroup, tset);
+}
+static int memcg_allow_attach_css(struct cgroup_subsys_state *css,
+				struct cgroup_taskset *tset)
+{
+	return mem_cgroup_allow_attach(css->cgroup, tset);
+}
+static void memcg_offline_css(struct cgroup_subsys_state *css)
+{
+	struct mem_cgroup *memcg = container_of(css, struct mem_cgroup, css);
+	struct mem_cgroup_event *event, *tmp;
+	spin_lock(&memcg->event_list_lock);
+	list_for_each_entry_safe(event, tmp, &memcg->event_list, list) {
+		list_del_init(&event->list);
+		schedule_work(&event->remove);
+	}
+	spin_unlock(&memcg->event_list_lock);
+	if (memcg != root_mem_cgroup)
+		mem_cgroup_force_empty(memcg, false);
+}
+static void memcg_free_css(struct cgroup_subsys_state *css)
+{
+	mem_cgroup_destroy(css);
+}
+static void memcg_bind_css(struct cgroup_subsys_state *css)
+{
+	if (cgroup_on_dfl(css->cgroup))
+		container_of(css, struct mem_cgroup, css)->use_hierarchy = 1;
+}
+static int __init memcg_register_swap_files(void)
+{
+#ifdef CONFIG_CGROUP_MEM_RES_CTLR_SWAP
+	if (do_swap_account)
+		return cgroup_add_legacy_cftypes(&mem_cgroup_subsys, memsw_cgroup_files);
+#endif
+	return 0;
+}
+subsys_initcall(memcg_register_swap_files);
+
 struct cgroup_subsys mem_cgroup_subsys = {
-	.name = "memory",
-	.subsys_id = mem_cgroup_subsys_id,
-	.create = mem_cgroup_create,
-	.pre_destroy = mem_cgroup_pre_destroy,
-	.destroy = mem_cgroup_destroy,
-	.populate = mem_cgroup_populate,
-	.can_attach = mem_cgroup_can_attach,
-	.cancel_attach = mem_cgroup_cancel_attach,
-	.attach = mem_cgroup_move_task,
-	.allow_attach = mem_cgroup_allow_attach,
-	.early_init = 0,
-	.use_id = 1,
+	.css_alloc = mem_cgroup_create,
+	.css_offline = memcg_offline_css,
+	.css_free = memcg_free_css,
+	.can_attach = memcg_can_attach_css,
+	.cancel_attach = memcg_cancel_attach_css,
+	.attach = memcg_attach_css,
+	.allow_attach = memcg_allow_attach_css,
+	.bind = memcg_bind_css,
+	.legacy_cftypes = mem_cgroup_files,
 };
 
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR_SWAP
