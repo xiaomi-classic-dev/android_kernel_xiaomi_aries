@@ -46,6 +46,10 @@
 #include <linux/kobject.h>
 #include <linux/slab.h>
 #include <linux/vmpressure.h>
+#include <linux/circ_buf.h>
+#include <linux/poll.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/almk.h>
@@ -201,6 +205,100 @@ static int test_task_flag(struct task_struct *p, int flag)
 }
 
 static DEFINE_MUTEX(scan_mutex);
+
+/* Android common LMK event ABI, adapted for the 3.4 task time/UID layout. */
+#define LMK_EVENT_COUNT 1024
+struct lmk_event {
+	char taskname[TASK_COMM_LEN];
+	pid_t pid, group_leader_pid;
+	uid_t uid;
+	unsigned long min_flt, maj_flt, rss_in_pages;
+	short oom_score_adj, min_score_adj;
+	unsigned long long start_time;
+};
+static struct lmk_event *lmk_events;
+static unsigned int lmk_event_head, lmk_event_tail;
+static DEFINE_SPINLOCK(lmk_event_lock);
+static DECLARE_WAIT_QUEUE_HEAD(lmk_event_wait);
+
+static void lowmem_report_kill(struct task_struct *task, int pages,
+			      short min_adj)
+{
+	struct lmk_event event;
+	unsigned long flags;
+
+	if (!lmk_events)
+		return;
+	/* Do not fault in argv or acquire mmap_sem while holding the RCU lock. */
+	get_task_comm(event.taskname, task);
+	event.pid = task_pid_nr(task);
+	event.group_leader_pid = task_tgid_nr(task);
+	event.uid = task_uid(task);
+	event.min_flt = task->min_flt;
+	event.maj_flt = task->maj_flt;
+	event.rss_in_pages = pages;
+	event.oom_score_adj = task->signal->oom_score_adj;
+	event.min_score_adj = min_adj;
+	event.start_time = nsec_to_clock_t(timespec_to_ns(&task->real_start_time));
+
+	spin_lock_irqsave(&lmk_event_lock, flags);
+	if (!CIRC_SPACE(lmk_event_head, lmk_event_tail, LMK_EVENT_COUNT)) {
+		spin_unlock_irqrestore(&lmk_event_lock, flags);
+		return;
+	}
+	lmk_events[lmk_event_head] = event;
+	lmk_event_head = (lmk_event_head + 1) & (LMK_EVENT_COUNT - 1);
+	spin_unlock_irqrestore(&lmk_event_lock, flags);
+	wake_up_interruptible(&lmk_event_wait);
+}
+
+static int lowmem_event_show(struct seq_file *seq, void *unused)
+{
+	struct lmk_event event;
+	unsigned long flags;
+
+	spin_lock_irqsave(&lmk_event_lock, flags);
+	if (lmk_event_head == lmk_event_tail) {
+		spin_unlock_irqrestore(&lmk_event_lock, flags);
+		return -EAGAIN;
+	}
+	event = lmk_events[lmk_event_tail];
+	lmk_event_tail = (lmk_event_tail + 1) & (LMK_EVENT_COUNT - 1);
+	spin_unlock_irqrestore(&lmk_event_lock, flags);
+	seq_printf(seq, "%lu %lu %lu %lu %lu %lu %hd %hd %llu\n%s\n",
+		   (unsigned long)event.pid, (unsigned long)event.uid,
+		   (unsigned long)event.group_leader_pid, event.min_flt,
+		   event.maj_flt, event.rss_in_pages, event.oom_score_adj,
+		   event.min_score_adj, event.start_time, event.taskname);
+	return 0;
+}
+
+static unsigned int lowmem_event_poll(struct file *file, poll_table *wait)
+{
+	unsigned int ready = 0;
+	unsigned long flags;
+
+	poll_wait(file, &lmk_event_wait, wait);
+	spin_lock_irqsave(&lmk_event_lock, flags);
+	if (lmk_event_head != lmk_event_tail)
+		ready = POLLIN | POLLRDNORM;
+	spin_unlock_irqrestore(&lmk_event_lock, flags);
+	return ready;
+}
+
+static int lowmem_event_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, lowmem_event_show, NULL);
+}
+
+static const struct file_operations lowmem_event_fops = {
+	.owner = THIS_MODULE,
+	.open = lowmem_event_open,
+	.read = seq_read,
+	.poll = lowmem_event_poll,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 
 int can_use_cma_pages(gfp_t gfp_mask)
 {
@@ -552,7 +650,8 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		}
 
 		lowmem_deathpending_timeout = jiffies + HZ;
-		send_sig(SIGKILL, selected, 0);
+		if (!send_sig(SIGKILL, selected, 0))
+			lowmem_report_kill(selected, selected_tasksize, min_score_adj);
 		set_tsk_thread_flag(selected, TIF_MEMDIE);
 		rem -= selected_tasksize;
 		rcu_read_unlock();
@@ -638,6 +737,14 @@ static int __init lowmem_init(void)
 		kfree(lowmem_notify_kobj);
 		return rc;
 	}
+	lmk_events = kcalloc(LMK_EVENT_COUNT, sizeof(*lmk_events), GFP_KERNEL);
+	if (!lmk_events || !proc_create("lowmemorykiller", S_IRUSR, NULL,
+				      &lowmem_event_fops)) {
+		kfree(lmk_events);
+		lmk_events = NULL;
+		/* Optional reporting must not disable the low-memory killer. */
+		pr_err("lowmemorykiller: could not create kill event interface\n");
+	}
 
 	register_shrinker(&lowmem_shrinker);
 	vmpressure_notifier_register(&lmk_vmpr_nb);
@@ -647,9 +754,12 @@ static int __init lowmem_init(void)
 
 static void __exit lowmem_exit(void)
 {
+	unregister_shrinker(&lowmem_shrinker);
+	vmpressure_notifier_unregister(&lmk_vmpr_nb);
+	remove_proc_entry("lowmemorykiller", NULL);
+	kfree(lmk_events);
 	kobject_put(lowmem_notify_kobj);
 	kfree(lowmem_notify_kobj);
-	unregister_shrinker(&lowmem_shrinker);
 }
 
 #ifdef CONFIG_ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
@@ -751,4 +861,3 @@ module_init(lowmem_init);
 module_exit(lowmem_exit);
 
 MODULE_LICENSE("GPL");
-
