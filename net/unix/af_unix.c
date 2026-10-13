@@ -2213,12 +2213,16 @@ unlock:
 		drop_skb = !unix_skb_len(skb);
 		/* skb is only safe to use if !drop_skb */
 		consume_skb(skb);
-		if (chunk < 0) {
+		if (chunk <= 0) {
 			err = chunk;
 			break;
 		}
 		copied += chunk;
 		size -= chunk;
+
+		/* Let the caller drain a full pipe after we have made progress. */
+		if (state->pipe)
+			state->splice_flags |= SPLICE_F_NONBLOCK;
 
 		if (drop_skb) {
 			/* A concurrent reader or close removed it from the queue. */
