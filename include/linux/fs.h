@@ -335,7 +335,7 @@ struct inodes_stat_t {
 
 #define FIDTRIM	_IOWR('f', 128, struct fstrim_range)	/* Deep discard trim */
 
-#define RENAME_NOREPLACE (1 << 0)
+#define RENAME_NOREPLACE (1<<0)
 
 #define	FS_IOC_GETFLAGS			_IOR('f', 1, long)
 #define	FS_IOC_SETFLAGS			_IOW('f', 2, long)
