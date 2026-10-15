@@ -339,17 +339,6 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-/* Observe inherited status before postcore SCM users; do not clear it. */
-static int __init msm_l2_erp_boot_status(void)
-{
-	pr_info("msm_cache_erp: early L2ESR=%08x L2ESYNR0=%08x L2EAR0=%08x\n",
-		get_l2_indirect_reg(L2ESR_IND_ADDR),
-		get_l2_indirect_reg(L2ESYNR0_IND_ADDR),
-		get_l2_indirect_reg(L2EAR0_IND_ADDR));
-	return 0;
-}
-early_initcall(msm_l2_erp_boot_status);
-
 static irqreturn_t msm_l2_erp_irq(int irq, void *dev_id)
 {
 	unsigned int l2esr;

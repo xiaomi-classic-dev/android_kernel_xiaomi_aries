@@ -253,8 +253,6 @@ static int tz_init(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 				sizeof(tz_pwrlevels), NULL, 0);
 	if (ret)
 		priv->idle_dcvs = 1;
-	pr_info("kgsl: TZ DCVS init ret=%d idle_dcvs=%u\n",
-		ret, priv->idle_dcvs);
 	return 0;
 }
 #else
