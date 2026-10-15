@@ -229,16 +229,22 @@ static int tz_init(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 {
 	int i = 0, j = 1, ret = 0;
 	struct tz_priv *priv;
+	struct kgsl_device_platform_data *pdata =
+		kgsl_device_get_drvdata(device);
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	unsigned int tz_pwrlevels[KGSL_MAX_PWRLEVELS + 1];
 
 	priv = pwrscale->priv = kzalloc(sizeof(struct tz_priv), GFP_KERNEL);
 	if (pwrscale->priv == NULL)
 		return -ENOMEM;
-	priv->idle_dcvs = 0;
+	priv->idle_dcvs = pdata && pdata->legacy_tz;
 	priv->governor = TZ_GOVERNOR_ONDEMAND;
 	spin_lock_init(&tz_lock);
 	kgsl_pwrscale_policy_add_files(device, pwrscale, &tz_attr_group);
+	if (priv->idle_dcvs) {
+		pr_info("kgsl: using legacy TrustZone GPU idle protocol\n");
+		return 0;
+	}
 	for (i = 0; i < pwr->num_pwrlevels - 1; i++) {
 		if (i == 0)
 			tz_pwrlevels[j] = pwr->pwrlevels[i].gpu_freq;

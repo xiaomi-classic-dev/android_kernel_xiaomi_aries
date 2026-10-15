@@ -91,6 +91,8 @@ struct kgsl_device_platform_data {
 	struct coresight_device *csdev;
 	struct coresight_platform_data *coresight_pdata;
 	unsigned int chipid;
+	/* Firmware uses the legacy two-argument TrustZone idle governor. */
+	bool legacy_tz;
 };
 
 #endif
