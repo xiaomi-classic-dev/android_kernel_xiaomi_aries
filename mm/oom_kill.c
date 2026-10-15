@@ -155,8 +155,6 @@ struct task_struct *find_lock_task_mm(struct task_struct *p)
 
 static bool process_mrelease_will_free_mem(struct task_struct *task)
 {
-	if (task->signal->flags & SIGNAL_GROUP_COREDUMP)
-		return false;
 	if (task->signal->flags & SIGNAL_GROUP_EXIT)
 		return true;
 	return thread_group_empty(task) && (task->flags & PF_EXITING);
@@ -234,6 +232,11 @@ SYSCALL_DEFINE2(process_mrelease, int, pidfd, unsigned int, flags)
 		ret = -EAGAIN;
 		goto put_mm;
 	}
+	/* 3.4 tracks an active coredump in mm, protected by mmap_sem. */
+	if (mm->core_state) {
+		ret = -EINVAL;
+		goto unlock_mm;
+	}
 	/* This kernel has no OOM reaper; zap only private anonymous mappings. */
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		if (vma->vm_file ||
@@ -243,6 +246,7 @@ SYSCALL_DEFINE2(process_mrelease, int, pidfd, unsigned int, flags)
 		zap_page_range(vma, vma->vm_start,
 			       vma->vm_end - vma->vm_start, NULL);
 	}
+unlock_mm:
 	up_read(&mm->mmap_sem);
 put_mm:
 	mmput(mm);
