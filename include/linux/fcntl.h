@@ -91,4 +91,13 @@
 
 #endif /* __KERNEL__ */
 
+
+/* statx synchronization policy (handled by the filesystem getattr path). */
+#ifndef AT_STATX_SYNC_TYPE
+#define AT_STATX_SYNC_TYPE 0x6000
+#define AT_STATX_SYNC_AS_STAT 0x0000
+#define AT_STATX_FORCE_SYNC 0x2000
+#define AT_STATX_DONT_SYNC 0x4000
+#endif
+
 #endif

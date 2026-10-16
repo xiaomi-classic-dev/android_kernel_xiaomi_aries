@@ -397,7 +397,11 @@
 /* 385 */	CALL(sys_memfd_create)
 		CALL(sys_bpf)
 		CALL(sys_ni_syscall)
-		.rept 424 - 388
+		.rept 397 - 388
+		CALL(sys_ni_syscall)
+		.endr
+/* 397 */	CALL(sys_statx)
+		.rept 424 - 398
 		CALL(sys_ni_syscall)
 		.endr
 /* 424 */	CALL(sys_pidfd_send_signal)

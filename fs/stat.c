@@ -14,6 +14,7 @@
 #include <linux/security.h>
 #include <linux/syscalls.h>
 #include <linux/pagemap.h>
+#include <linux/mount.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -470,3 +471,81 @@ void inode_set_bytes(struct inode *inode, loff_t bytes)
 }
 
 EXPORT_SYMBOL(inode_set_bytes);
+
+/*
+ * statx ABI adapter for the 3.4 VFS.  Keep its native getattr operation and
+ * security/path lookup checks; report only the fields it actually supplies.
+ * The UAPI layout and query flags follow Linux v5.5 fs/stat.c and stat.h.
+ * This VFS performs its ordinary synchronous getattr for every sync policy;
+ * DONT_SYNC permits, but does not require, using cached attributes.
+ */
+SYSCALL_DEFINE5(statx, int, dfd, const char __user *, filename, int, flags,
+	       unsigned int, mask, struct statx __user *, buffer)
+{
+	struct path path;
+	struct kstat stat;
+	struct statx tmp;
+	struct inode *inode;
+	int lookup_flags = 0;
+	int error;
+
+	BUILD_BUG_ON(sizeof(struct statx) != 256);
+	if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT | AT_EMPTY_PATH |
+		      AT_STATX_SYNC_TYPE))
+		return -EINVAL;
+	if ((flags & AT_STATX_SYNC_TYPE) == AT_STATX_SYNC_TYPE ||
+	    (mask & STATX__RESERVED))
+		return -EINVAL;
+	if (!(flags & AT_SYMLINK_NOFOLLOW))
+		lookup_flags |= LOOKUP_FOLLOW;
+	if (flags & AT_EMPTY_PATH)
+		lookup_flags |= LOOKUP_EMPTY;
+	error = user_path_at(dfd, filename, lookup_flags, &path);
+	if (error)
+		return error;
+	memset(&stat, 0, sizeof(stat));
+	error = vfs_getattr(path.mnt, path.dentry, &stat);
+	if (error)
+		goto out;
+	inode = path.dentry->d_inode;
+	memset(&tmp, 0, sizeof(tmp));
+	tmp.stx_mask = STATX_BASIC_STATS;
+	tmp.stx_blksize = stat.blksize;
+	tmp.stx_nlink = stat.nlink;
+	tmp.stx_uid = stat.uid;
+	tmp.stx_gid = stat.gid;
+	tmp.stx_mode = stat.mode;
+	tmp.stx_ino = stat.ino;
+	tmp.stx_size = stat.size;
+	tmp.stx_blocks = stat.blocks;
+	tmp.stx_atime.tv_sec = stat.atime.tv_sec;
+	tmp.stx_atime.tv_nsec = stat.atime.tv_nsec;
+	tmp.stx_mtime.tv_sec = stat.mtime.tv_sec;
+	tmp.stx_mtime.tv_nsec = stat.mtime.tv_nsec;
+	tmp.stx_ctime.tv_sec = stat.ctime.tv_sec;
+	tmp.stx_ctime.tv_nsec = stat.ctime.tv_nsec;
+	tmp.stx_dev_major = MAJOR(stat.dev);
+	tmp.stx_dev_minor = MINOR(stat.dev);
+	tmp.stx_rdev_major = MAJOR(stat.rdev);
+	tmp.stx_rdev_minor = MINOR(stat.rdev);
+	tmp.stx_attributes_mask = STATX_ATTR_IMMUTABLE | STATX_ATTR_APPEND |
+				  STATX_ATTR_AUTOMOUNT;
+	if (IS_IMMUTABLE(inode))
+		tmp.stx_attributes |= STATX_ATTR_IMMUTABLE;
+	if (IS_APPEND(inode))
+		tmp.stx_attributes |= STATX_ATTR_APPEND;
+	if (IS_AUTOMOUNT(inode))
+		tmp.stx_attributes |= STATX_ATTR_AUTOMOUNT;
+#ifdef CONFIG_FS_VERITY
+	if (inode->i_sb->s_vop) {
+		tmp.stx_attributes_mask |= STATX_ATTR_VERITY;
+		if (IS_VERITY(inode))
+			tmp.stx_attributes |= STATX_ATTR_VERITY;
+	}
+#endif
+	if (copy_to_user(buffer, &tmp, sizeof(tmp)))
+		error = -EFAULT;
+out:
+	path_put(&path);
+	return error;
+}

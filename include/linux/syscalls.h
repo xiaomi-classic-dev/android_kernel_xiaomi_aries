@@ -44,6 +44,7 @@ struct sembuf;
 struct shmid_ds;
 struct sockaddr;
 struct stat;
+struct statx;
 struct stat64;
 struct statfs;
 struct statfs64;
@@ -871,5 +872,9 @@ asmlinkage long sys_pidfd_open(pid_t pid, unsigned int flags);
 asmlinkage long sys_pidfd_send_signal(int pidfd, int sig,
 		struct siginfo __user *info, unsigned int flags);
 asmlinkage long sys_process_mrelease(int pidfd, unsigned int flags);
+
+
+asmlinkage long sys_statx(int dfd, const char __user *filename, int flags,
+			 unsigned int mask, struct statx __user *buffer);
 
 #endif
