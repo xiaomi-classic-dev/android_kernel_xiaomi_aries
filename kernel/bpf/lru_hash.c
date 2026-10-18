@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Bounded BPF LRU hash map for the legacy 3.10 BPF map interface. */
+/* Bounded BPF LRU hash map for the legacy BPF map interface. */
 #include <linux/bpf.h>
 #include <linux/err.h>
 #include <linux/filter.h>
@@ -35,8 +35,9 @@ static struct lru_hash_elem *lru_find(struct lru_hash_map *lru,
 					      const void *key, u32 hash)
 {
 	struct lru_hash_elem *elem;
+	struct hlist_node *pos;
 
-	hlist_for_each_entry_rcu(elem, lru_bucket(lru, hash), hash_node)
+	hlist_for_each_entry_rcu(elem, pos, lru_bucket(lru, hash), hash_node)
 		if (elem->hash == hash &&
 		    !memcmp(elem->data, key, lru->map.key_size))
 			return elem;

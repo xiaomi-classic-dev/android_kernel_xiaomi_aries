@@ -25,10 +25,11 @@ static struct bpf_sk_storage_elem *
 sk_storage_lookup(struct bpf_sk_storage *storage, struct bpf_map *map)
 {
 	struct bpf_sk_storage_elem *elem;
+	struct hlist_node *pos;
 
 	if (!storage)
 		return NULL;
-	hlist_for_each_entry_rcu(elem, &storage->elems, node)
+	hlist_for_each_entry_rcu(elem, pos, &storage->elems, node)
 		if (elem->map == map)
 			return elem;
 	return NULL;
@@ -47,14 +48,14 @@ void bpf_sk_storage_free(struct sock *sk)
 {
 	struct bpf_sk_storage *storage;
 	struct bpf_sk_storage_elem *elem;
-	struct hlist_node *next;
+	struct hlist_node *pos, *next;
 	unsigned long flags;
 
 	storage = xchg(&sk->sk_bpf_storage, NULL);
 	if (!storage)
 		return;
 	spin_lock_irqsave(&storage->lock, flags);
-	hlist_for_each_entry_safe(elem, next, &storage->elems, node) {
+	hlist_for_each_entry_safe(elem, pos, next, &storage->elems, node) {
 		hlist_del_rcu(&elem->node);
 		call_rcu(&elem->rcu, sk_storage_elem_free_rcu);
 	}
