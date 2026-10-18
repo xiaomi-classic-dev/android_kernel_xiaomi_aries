@@ -1,0 +1,2 @@
+# Android 17 first-stage init reads this before system/vendor is mounted.
+/dev/block/platform/msm_sdcc.1/by-name/system /system ext4 ro,barrier=1 wait,first_stage_mount

@@ -36,8 +36,12 @@ $(obj)/initramfs_data.o: $(obj)/initramfs_data.cpio$(suffix_y) FORCE
 
 hostprogs-y := gen_init_cpio
 initramfs   := $(CONFIG_SHELL) $(srctree)/scripts/gen_initramfs_list.sh
-ramfs-input := $(if $(filter-out "",$(CONFIG_INITRAMFS_SOURCE)), \
-			$(shell echo $(CONFIG_INITRAMFS_SOURCE)),-d)
+ramfs-input := $(strip $(if $(filter-out "",$(CONFIG_INITRAMFS_SOURCE)), \
+			$(shell echo $(CONFIG_INITRAMFS_SOURCE)),-d))
+# Resolve the embedded first-stage fstab from the source tree for O= builds.
+ifneq ($(wildcard $(srctree)/$(ramfs-input)),)
+ramfs-input := $(srctree)/$(ramfs-input)
+endif
 ramfs-args  := \
         $(if $(CONFIG_INITRAMFS_ROOT_UID), -u $(CONFIG_INITRAMFS_ROOT_UID)) \
         $(if $(CONFIG_INITRAMFS_ROOT_GID), -g $(CONFIG_INITRAMFS_ROOT_GID))
