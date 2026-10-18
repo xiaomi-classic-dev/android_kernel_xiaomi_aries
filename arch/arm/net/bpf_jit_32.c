@@ -1454,6 +1454,11 @@ exit:
 			break;
 		case BPF_DW:
 			/* Load a double word */
+			/* Preserve an aliased base across both 32-bit loads. */
+			if (!dstk && dst_lo == rn) {
+				emit(ARM_MOV_R(tmp2[1], rn), ctx);
+				rn = tmp2[1];
+			}
 			emit_ldx_r(dst_lo, rn, dstk, off, ctx, BPF_W);
 			emit_ldx_r(dst_hi, rn, dstk, off+4, ctx, BPF_W);
 			break;
