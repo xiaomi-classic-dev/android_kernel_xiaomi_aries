@@ -16,6 +16,12 @@
 #define BPF_REGISTER_MAX_RANGE (1024 * 1024 * 1024)
 #define BPF_REGISTER_MIN_RANGE -1
 
+enum bpf_reg_liveness {
+	REG_LIVE_NONE = 0,
+	REG_LIVE_READ = 1,
+	REG_LIVE_WRITTEN = 2,
+};
+
 struct bpf_reg_state {
 	enum bpf_reg_type type;
 	union {
@@ -34,13 +40,16 @@ struct bpf_reg_state {
 		struct bpf_map *map_ptr;
 	};
 	u32 id;
+	/* Size of a live ringbuf reservation, never larger than its map. */
+	u32 mem_size;
 	/* Used to determine if any memory access using this register will
-	 * result in a bad access. These two fields must be last.
-	 * See states_equal()
+	 * result in a bad access.
 	 */
 	s64 min_value;
 	u64 max_value;
 	bool value_from_signed;
+	/* Reads propagate to cached ancestors until screened by a write. */
+	enum bpf_reg_liveness live;
 };
 
 enum bpf_stack_slot_type {
@@ -55,9 +64,13 @@ enum bpf_stack_slot_type {
  * type of all registers and stack info
  */
 struct bpf_verifier_state {
+	/* This legacy verifier admits one outstanding reservation per path. */
+	u32 active_ringbuf_id;
+	u32 active_sock_ids[4];
 	struct bpf_reg_state regs[MAX_BPF_REG];
 	u8 stack_slot_type[MAX_BPF_STACK];
 	struct bpf_reg_state spilled_regs[MAX_BPF_STACK / BPF_REG_SIZE];
+	struct bpf_verifier_state *parent;
 };
 
 /* linked list of verifier states used to prune search */
@@ -92,12 +105,14 @@ struct bpf_verifier_env {
 	int stack_size;			/* number of states to be processed */
 	struct bpf_verifier_state cur_state; /* current verifier state */
 	struct bpf_verifier_state_list **explored_states; /* search pruning optimization */
+	u32 cached_states;
 	const struct bpf_ext_analyzer_ops *analyzer_ops; /* external analyzer ops */
 	void *analyzer_priv; /* pointer to external analyzer's private data */
 	struct bpf_map *used_maps[MAX_USED_MAPS]; /* array of map's used by eBPF program */
 	u32 used_map_cnt;		/* number of used maps */
 	u32 id_gen;			/* used to generate unique reg IDs */
 	bool allow_ptr_leaks;
+	bool has_loops;
 	bool seen_direct_write;
 	bool varlen_map_value_access;
 	struct bpf_insn_aux_data *insn_aux_data; /* array of per-insn state */
