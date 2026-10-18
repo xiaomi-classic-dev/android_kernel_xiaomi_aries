@@ -1,0 +1,2 @@
+# Only the real first-stage System mount; deterministic ownership and permissions.
+file /fstab.qcom ${srctree}/arch/arm/configs/aries-initramfs/fstab.qcom 0644 0 0
